@@ -20,6 +20,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "lint": "tsc --noEmit",
+    "test": "vitest run",
     "clean": "rm -rf dist"
   },
   "keywords": [
@@ -35,6 +36,7 @@
   "devDependencies": {
     "@webgpu/types": "^0.1.52",
     "tsup": "^8.3.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.18"
   }
 }
