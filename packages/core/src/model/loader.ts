@@ -31,7 +31,7 @@ export async function loadModel(
 
   onProgress?.({ phase: "download", loaded: 0, total: 0, fraction: 0 });
 
-  const buffer = await fetchWithCache(url, (loaded, total) => {
+  const buffer = await fetchModel(url, (loaded, total) => {
     onProgress?.({
       phase: "download",
       loaded,
@@ -236,22 +236,10 @@ function configFromSafetensors(
  * Fetch with Cache API support.
  * On first load, stores in Cache API for instant subsequent loads.
  */
-async function fetchWithCache(
+async function fetchModel(
   url: string,
   onProgress: (loaded: number, total: number) => void
 ): Promise<ArrayBuffer> {
-  // Try Cache API first
-  if (typeof caches !== "undefined") {
-    const cache = await caches.open("0xbitnet-models");
-    const cached = await cache.match(url);
-    if (cached) {
-      const buffer = await cached.arrayBuffer();
-      onProgress(buffer.byteLength, buffer.byteLength);
-      return buffer;
-    }
-  }
-
-  // Fetch with progress tracking
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch model: ${response.status} ${response.statusText}`);
@@ -279,21 +267,11 @@ async function fetchWithCache(
     onProgress(loaded, contentLength);
   }
 
-  // Merge chunks
   const buffer = new Uint8Array(loaded);
   let offset = 0;
   for (const chunk of chunks) {
     buffer.set(chunk, offset);
     offset += chunk.byteLength;
-  }
-
-  // Cache for next time
-  if (typeof caches !== "undefined") {
-    const cache = await caches.open("0xbitnet-models");
-    const cacheResponse = new Response(buffer.buffer, {
-      headers: { "Content-Type": "application/octet-stream" },
-    });
-    await cache.put(url, cacheResponse);
   }
 
   return buffer.buffer;
