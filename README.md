@@ -1,3 +1,5 @@
+# 🚧 WIP - Not ready for production
+
 <p align="center">
   <img src="assets/hero.png" alt="0xBitNet — 1-bit Inference on WebGPU" width="720" />
 </p>
