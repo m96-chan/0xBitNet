@@ -1,5 +1,5 @@
 // Ternary GEMM: batched matrix multiply for prompt processing
-// C[M,N] = TernaryWeights[M,K] × Input[K,N]
+// Output[N,M] = Input[N,K] × TernaryWeights[M,K]^T
 //
 // Weight packing (I2_S / llama.cpp BitNet fork):
 //   4 ternary values per byte, MSB-first: bits[7:6]=elem0, [5:4]=elem1, [3:2]=elem2, [1:0]=elem3
@@ -21,7 +21,7 @@ struct Params {
 @group(0) @binding(1) var<storage, read> input: array<i32>;
 @group(0) @binding(2) var<storage, read> scales: array<f32>;
 @group(0) @binding(3) var<uniform> params: Params;
-@group(0) @binding(4) var<uniform> input_scale: f32;
+@group(0) @binding(4) var<storage, read> input_scales: array<f32>;
 @group(0) @binding(5) var<storage, read_write> output: array<f32>;
 
 const TILE_M: u32 = 64u;  // rows per workgroup
@@ -91,7 +91,7 @@ fn main(
 
       var x_val: i32 = 0;
       if (global_k < params.K && global_col < params.N) {
-        x_val = input[global_k * params.N + global_col];
+        x_val = input[global_col * params.K + global_k];
       }
       shared_x[local_k * TILE_N + local_col] = x_val;
     }
@@ -116,11 +116,12 @@ fn main(
   for (var tm = 0u; tm < THREAD_TILE_M; tm++) {
     let global_row = wg_row + tid_m * THREAD_TILE_M + tm;
     if (global_row >= params.M) { continue; }
-    let scale = scales[global_row] * input_scale;
+    let w_scale = scales[global_row];
     for (var tn = 0u; tn < THREAD_TILE_N; tn++) {
       let global_col = wg_col + tid_n * THREAD_TILE_N + tn;
       if (global_col >= params.N) { continue; }
-      output[global_row * params.N + global_col] = f32(acc[tm * THREAD_TILE_N + tn]) * scale;
+      let scale = w_scale * input_scales[global_col];
+      output[global_col * params.M + global_row] = f32(acc[tm * THREAD_TILE_N + tn]) * scale;
     }
   }
 }

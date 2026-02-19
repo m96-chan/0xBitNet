@@ -233,9 +233,6 @@ export class BitLinear {
     paramsView.setUint32(12, this.kPacked, true);
     const paramsBuffer = this.createUniformBuffer(paramsData);
 
-    const inputScaleBuffer = this.createUniformBuffer(new ArrayBuffer(4));
-    encoder.copyBufferToBuffer(inputScales, 0, inputScaleBuffer, 0, 4);
-
     const bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,
       entries: [
@@ -243,7 +240,7 @@ export class BitLinear {
         { binding: 1, resource: { buffer: input } },
         { binding: 2, resource: { buffer: this.weightScales } },
         { binding: 3, resource: { buffer: paramsBuffer } },
-        { binding: 4, resource: { buffer: inputScaleBuffer } },
+        { binding: 4, resource: { buffer: inputScales } },
         { binding: 5, resource: { buffer: output } },
       ],
     });

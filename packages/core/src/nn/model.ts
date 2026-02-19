@@ -10,6 +10,7 @@ import { headDim } from "../model/config.js";
 
 import embeddingWGSL from "../shaders/embedding.wgsl";
 import rmsnormWGSL from "../shaders/rmsnorm.wgsl";
+import f32MatmulWGSL from "../shaders/f32_matmul.wgsl";
 
 /**
  * Full BitNet model: embedding → N × transformer → final RMSNorm → LM head
@@ -370,19 +371,51 @@ export class BitNetModel {
   }
 
   private dispatchLMHead(
-    _encoder: GPUCommandEncoder,
-    _input: GPUBuffer,
-    _N: number
+    encoder: GPUCommandEncoder,
+    input: GPUBuffer,
+    N: number
   ): GPUBuffer {
-    // Tied embedding LM head: input @ embed^T
-    // This is a standard f32 matmul, reusing the embedding table
-    // For now, allocate output and dispatch a basic GEMV/GEMM
-    // TODO: implement f32 matmul kernel for tied embeddings
-    const outputSize = _N * this.config.vocabSize * 4;
-    return this.pool.acquire(
-      outputSize,
+    const V = this.config.vocabSize;
+    const D = this.config.hiddenSize;
+
+    const { pipeline, bindGroupLayout } = this.pipelines.getOrCreate(
+      "f32_matmul",
+      f32MatmulWGSL
+    );
+
+    const output = this.pool.acquire(
+      N * V * 4,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
+
+    const paramsData = new ArrayBuffer(12);
+    const v = new DataView(paramsData);
+    v.setUint32(0, N, true);
+    v.setUint32(4, V, true);
+    v.setUint32(8, D, true);
+    const paramsBuffer = this.createUniform(paramsData);
+
+    const bindGroup = this.device.createBindGroup({
+      layout: bindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: input } },
+        { binding: 1, resource: { buffer: this.embedTokens } },
+        { binding: 2, resource: { buffer: output } },
+        { binding: 3, resource: { buffer: paramsBuffer } },
+      ],
+    });
+
+    const totalWorkgroups = N * V;
+    const wgX = Math.min(totalWorkgroups, 65535);
+    const wgY = Math.ceil(totalWorkgroups / 65535);
+
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(wgX, wgY);
+    pass.end();
+
+    return output;
   }
 
   private createUniform(data: ArrayBuffer): GPUBuffer {
