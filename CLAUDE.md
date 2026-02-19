@@ -33,7 +33,14 @@ Download header bytes and parse. Don't assume tensor names or metadata keys.
 - I2_S weights are ALREADY packed: 4 ternary values per byte, MSB-first (bits[7:6]=elem0).
   Upload raw bytes directly — do NOT repack. The data is NOT unpacked int8 {-1,0,1}.
 - I2_S byte size = numElements/4 + 32. Last 32 bytes = per-tensor float32 scale (×8 replicated).
-- I2_S bit extraction order: within each byte, MSB pair is first element (b>>6, b>>4, b>>2, b>>0).
-  When reading as u32 little-endian, use: shift = (i/4)*8 + (3 - i%4)*2, NOT naive 2*i.
+- I2_S uses **128-element block interleaving** (NOT sequential packing!):
+  Each 32-byte block stores 128 elements in 4 groups of 32.
+  Byte[gp] within a block stores elements at [gp, 32+gp, 64+gp, 96+gp]:
+    bits[7:6]=group0 (offset 0), bits[5:4]=group1 (offset 32),
+    bits[3:2]=group2 (offset 64), bits[1:0]=group3 (offset 96).
+  To extract element at logical index k:
+    block=k/128, pos=k%128, group=pos/32, gp=pos%32
+    u32_idx = block*8 + gp/4, shift = (gp%4)*8 + (6-2*group)
+  Confirmed by dequantize_row_i2_s() and quantize_i2_s() in Eddie-Wang1120/llama.cpp.
 - `token_embd.weight` is F16 (type=1), not F32
 - No `output.weight` tensor → tied embeddings (tieWordEmbeddings=true)

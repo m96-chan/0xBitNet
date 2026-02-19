@@ -1,9 +1,13 @@
 // Ternary GEMV: packed ternary weights × int8 activations → i32 accumulator
 //
-// Weight packing (I2_S / llama.cpp BitNet fork):
-//   4 ternary values per byte, MSB-first: bits[7:6]=elem0, [5:4]=elem1, [3:2]=elem2, [1:0]=elem3
-//   code mapping: {0=-1, 1=0, 2=+1, 3=0(unused)}
-//   16 values per u32 (little-endian: byte0=low bits)
+// Weight packing (I2_S / Eddie-Wang1120 llama.cpp fork):
+//   128-element block interleaving for SIMD. Each 32-byte block stores 128 elements
+//   in 4 groups of 32. Byte[gp] within a block stores:
+//     bits[7:6] = element at group0 (offset 0*32 + gp)
+//     bits[5:4] = element at group1 (offset 1*32 + gp)
+//     bits[3:2] = element at group2 (offset 2*32 + gp)
+//     bits[1:0] = element at group3 (offset 3*32 + gp)
+//   code mapping: {0=-1, 1=0, 2=+1}
 //
 // Layout:
 //   weights: [M, K/16] u32  (packed ternary)
@@ -47,19 +51,23 @@ fn main(
 
   var acc: i32 = 0;
 
-  // Each thread processes a strided slice of packed columns
+  // Each thread processes a strided slice of packed u32 columns
   for (var col = tid; col < params.K_packed; col += WORKGROUP_SIZE) {
     let packed = weights[row_offset + col];
-    let base_k = col * 16u;
 
-    // Unpack 16 ternary weights (MSB-first per byte) and dot with input
+    // I2_S block interleaving: 128 elements per 32-byte (8 u32) block
+    let block = col / 8u;
+    let base_gp = (col % 8u) * 4u;
+
+    // Unpack 16 ternary weights from this u32 and dot with input
     for (var i = 0u; i < 16u; i++) {
-      let k_idx = base_k + i;
+      let byte_in_u32 = i / 4u;
+      let group = i % 4u;
+      let gp = base_gp + byte_in_u32;
+      let k_idx = block * 128u + group * 32u + gp;
       if (k_idx < params.K) {
-        // I2_S packing: within each byte, MSB pair is first element
-        let byte_idx = i >> 2u;
-        let pair_idx = 3u - (i & 3u);
-        let code = (packed >> (byte_idx * 8u + pair_idx * 2u)) & 3u;
+        let shift = byte_in_u32 * 8u + (6u - 2u * group);
+        let code = (packed >> shift) & 3u;
         let w = i32(code) - 1;
         acc += w * input[k_idx];
       }
