@@ -82,17 +82,20 @@ export class BitNetModel {
       const inputLN = requireWeight(`${prefix}.input_layernorm.weight`);
       const postAttnLN = requireWeight(`${prefix}.post_attention_layernorm.weight`);
 
-      // Helper: get per-projection norm or fall back to layer norm
-      function projNorm(projPath: string, fallback: GPUBuffer): GPUBuffer {
-        return weights.get(`${projPath}.input_norm.weight`) ?? fallback;
-      }
+      // BitNet sub-norms (shared per attention / FFN block)
+      const attnSubNorm = weights.get(`${prefix}.self_attn.sub_norm.weight`) ?? inputLN;
+      const ffnSubNorm = weights.get(`${prefix}.mlp.sub_norm.weight`) ?? postAttnLN;
+
+      // Helper: get per-projection norm or fall back to sub-norm / layer norm
+      function attnNorm(): GPUBuffer { return attnSubNorm; }
+      function ffnNorm(): GPUBuffer { return ffnSubNorm; }
 
       // Attention projections
       const qProj = new BitLinear(
         device, pipelines, pool,
         requireWeight(`${prefix}.self_attn.q_proj.weight`),
         requireWeight(`${prefix}.self_attn.q_proj.weight_scale`),
-        projNorm(`${prefix}.self_attn.q_proj`, inputLN),
+        attnNorm(),
         config.hiddenSize,
         config.numAttentionHeads * headDim(config)
       );
@@ -101,7 +104,7 @@ export class BitNetModel {
         device, pipelines, pool,
         requireWeight(`${prefix}.self_attn.k_proj.weight`),
         requireWeight(`${prefix}.self_attn.k_proj.weight_scale`),
-        projNorm(`${prefix}.self_attn.k_proj`, inputLN),
+        attnNorm(),
         config.hiddenSize,
         config.numKeyValueHeads * headDim(config)
       );
@@ -110,7 +113,7 @@ export class BitNetModel {
         device, pipelines, pool,
         requireWeight(`${prefix}.self_attn.v_proj.weight`),
         requireWeight(`${prefix}.self_attn.v_proj.weight_scale`),
-        projNorm(`${prefix}.self_attn.v_proj`, inputLN),
+        attnNorm(),
         config.hiddenSize,
         config.numKeyValueHeads * headDim(config)
       );
@@ -119,7 +122,7 @@ export class BitNetModel {
         device, pipelines, pool,
         requireWeight(`${prefix}.self_attn.o_proj.weight`),
         requireWeight(`${prefix}.self_attn.o_proj.weight_scale`),
-        projNorm(`${prefix}.self_attn.o_proj`, inputLN),
+        attnNorm(),
         config.numAttentionHeads * headDim(config),
         config.hiddenSize
       );
@@ -134,7 +137,7 @@ export class BitNetModel {
         device, pipelines, pool,
         requireWeight(`${prefix}.mlp.up_proj.weight`),
         requireWeight(`${prefix}.mlp.up_proj.weight_scale`),
-        projNorm(`${prefix}.mlp.up_proj`, postAttnLN),
+        ffnNorm(),
         config.hiddenSize,
         config.intermediateSize
       );
@@ -143,7 +146,7 @@ export class BitNetModel {
         device, pipelines, pool,
         requireWeight(`${prefix}.mlp.down_proj.weight`),
         requireWeight(`${prefix}.mlp.down_proj.weight_scale`),
-        projNorm(`${prefix}.mlp.down_proj`, postAttnLN),
+        ffnNorm(),
         config.intermediateSize,
         config.hiddenSize
       );
@@ -154,7 +157,7 @@ export class BitNetModel {
           device, pipelines, pool,
           requireWeight(`${prefix}.mlp.gate_proj.weight`),
           requireWeight(`${prefix}.mlp.gate_proj.weight_scale`),
-          projNorm(`${prefix}.mlp.gate_proj`, postAttnLN),
+          ffnNorm(),
           config.hiddenSize,
           config.intermediateSize
         );

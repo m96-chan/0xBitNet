@@ -165,21 +165,16 @@ function remapGGUFName(name: string): string {
     "attn_k.weight": "self_attn.k_proj.weight",
     "attn_v.weight": "self_attn.v_proj.weight",
     "attn_output.weight": "self_attn.o_proj.weight",
-    // Norms
+    // Layer norms
     "attn_norm.weight": "input_layernorm.weight",
     "ffn_norm.weight": "post_attention_layernorm.weight",
+    // BitNet sub-norms (per-projection RMSNorm before quantization)
+    "attn_sub_norm.weight": "self_attn.sub_norm.weight",
+    "ffn_sub_norm.weight": "mlp.sub_norm.weight",
     // FFN
     "ffn_up.weight": "mlp.up_proj.weight",
     "ffn_down.weight": "mlp.down_proj.weight",
     "ffn_gate.weight": "mlp.gate_proj.weight",
-    // BitNet-specific sub-norms (if present)
-    "attn_q.input_norm.weight": "self_attn.q_proj.input_norm.weight",
-    "attn_k.input_norm.weight": "self_attn.k_proj.input_norm.weight",
-    "attn_v.input_norm.weight": "self_attn.v_proj.input_norm.weight",
-    "attn_output.input_norm.weight": "self_attn.o_proj.input_norm.weight",
-    "ffn_up.input_norm.weight": "mlp.up_proj.input_norm.weight",
-    "ffn_down.input_norm.weight": "mlp.down_proj.input_norm.weight",
-    "ffn_gate.input_norm.weight": "mlp.gate_proj.input_norm.weight",
   };
 
   const mapped = mapping[rest];
@@ -265,38 +260,28 @@ async function loadSafetensors(
 function configFromGGUFMetadata(
   metadata: Record<string, unknown>
 ): ModelConfig {
-  const get = (key: string) => metadata[key];
-
-  const hiddenSize =
-    (get("llama.embedding_length") as number) ??
-    (get("bitnet.embedding_length") as number) ??
-    2560;
-  const numLayers =
-    (get("llama.block_count") as number) ??
-    (get("bitnet.block_count") as number) ??
-    30;
-  const numHeads =
-    (get("llama.attention.head_count") as number) ??
-    (get("bitnet.attention.head_count") as number) ??
-    32;
-  const numKVHeads =
-    (get("llama.attention.head_count_kv") as number) ??
-    (get("bitnet.attention.head_count_kv") as number) ??
-    numHeads;
-  const vocabSize =
-    (get("llama.vocab_size") as number) ??
-    (get("tokenizer.ggml.tokens") as unknown[] as string[])?.length ??
-    128256;
-  const intermediateSize =
-    (get("llama.feed_forward_length") as number) ??
-    (get("bitnet.feed_forward_length") as number) ??
-    6912;
-
-  // Try to detect activation type from architecture
+  // Architecture prefix varies: "llama", "bitnet", "bitnet-b1.58", etc.
   const arch =
-    (get("general.architecture") as string) ?? "bitnet";
-  const isOfficial =
-    vocabSize > 100000 || arch.includes("bitnet");
+    (metadata["general.architecture"] as string) ?? "bitnet";
+
+  // Try architecture-prefixed keys, then common fallbacks
+  function get(suffix: string): unknown {
+    return metadata[`${arch}.${suffix}`]
+      ?? metadata[`llama.${suffix}`]
+      ?? metadata[`bitnet.${suffix}`];
+  }
+
+  const hiddenSize = (get("embedding_length") as number) ?? 2560;
+  const numLayers = (get("block_count") as number) ?? 30;
+  const numHeads = (get("attention.head_count") as number) ?? 32;
+  const numKVHeads = (get("attention.head_count_kv") as number) ?? numHeads;
+  const vocabSize =
+    (get("vocab_size") as number) ??
+    (metadata["tokenizer.ggml.tokens"] as unknown[] as string[])?.length ??
+    128256;
+  const intermediateSize = (get("feed_forward_length") as number) ?? 6912;
+
+  const isOfficial = vocabSize > 100000 || arch.includes("bitnet");
 
   return {
     modelType: "bitnet",
@@ -306,11 +291,9 @@ function configFromGGUFMetadata(
     numHiddenLayers: numLayers,
     numAttentionHeads: numHeads,
     numKeyValueHeads: numKVHeads,
-    maxPositionEmbeddings: (get("llama.context_length") as number) ?? 4096,
-    rmsNormEps: (get("llama.attention.layer_norm_rms_epsilon") as number) ?? 1e-5,
-    ropeTheta:
-      (get("llama.rope.freq_base") as number) ??
-      (isOfficial ? 500000.0 : 10000.0),
+    maxPositionEmbeddings: (get("context_length") as number) ?? 4096,
+    rmsNormEps: (get("attention.layer_norm_rms_epsilon") as number) ?? 1e-5,
+    ropeTheta: (get("rope.freq_base") as number) ?? (isOfficial ? 500000.0 : 10000.0),
     tieWordEmbeddings: false,
     activation: isOfficial ? "relu2" : "silu",
   };
