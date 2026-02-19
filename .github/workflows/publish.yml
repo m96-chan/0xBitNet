@@ -21,8 +21,8 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - run: npm ci
-      - run: turbo run build
-      - run: turbo run lint
+      - run: npx turbo run build
+      - run: npx turbo run lint
 
       - run: npm publish --provenance --access public
         working-directory: packages/core
