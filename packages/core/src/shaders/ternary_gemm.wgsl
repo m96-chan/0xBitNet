@@ -1,7 +1,10 @@
 // Ternary GEMM: batched matrix multiply for prompt processing
 // C[M,N] = TernaryWeights[M,K] × Input[K,N]
 //
-// Weight packing: 16 ternary values per u32 (2 bits each)
+// Weight packing (I2_S / llama.cpp BitNet fork):
+//   4 ternary values per byte, MSB-first: bits[7:6]=elem0, [5:4]=elem1, [3:2]=elem2, [1:0]=elem3
+//   code mapping: {0=-1, 1=0, 2=+1, 3=0(unused)}
+//   16 values per u32 (little-endian)
 // Input: int8 activations stored as i32
 // Output: f32 (dequantized)
 //
@@ -66,9 +69,12 @@ fn main(
       var w_val: i32 = 0;
       if (global_row < params.M && global_k < params.K) {
         let packed_col = global_k / 16u;
-        let bit_idx = global_k % 16u;
+        let elem_idx = global_k % 16u;
         let packed = weights[global_row * params.K_packed + packed_col];
-        let code = (packed >> (2u * bit_idx)) & 3u;
+        // I2_S packing: within each byte, MSB pair is first element
+        let byte_idx = elem_idx >> 2u;
+        let pair_idx = 3u - (elem_idx & 3u);
+        let code = (packed >> (byte_idx * 8u + pair_idx * 2u)) & 3u;
         w_val = i32(code) - 1;
       }
       shared_w[local_row * TILE_K + local_col] = w_val;

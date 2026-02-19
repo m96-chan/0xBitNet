@@ -1,8 +1,9 @@
 // Ternary GEMV: packed ternary weights × int8 activations → i32 accumulator
 //
-// Weight packing: 16 ternary values per u32 (2 bits each)
-//   code ∈ {0,1,2} → weight = code - 1 ∈ {-1,0,+1}
-//   packed >> (2*i) & 3 gives the i-th code
+// Weight packing (I2_S / llama.cpp BitNet fork):
+//   4 ternary values per byte, MSB-first: bits[7:6]=elem0, [5:4]=elem1, [3:2]=elem2, [1:0]=elem3
+//   code mapping: {0=-1, 1=0, 2=+1, 3=0(unused)}
+//   16 values per u32 (little-endian: byte0=low bits)
 //
 // Layout:
 //   weights: [M, K/16] u32  (packed ternary)
@@ -51,12 +52,15 @@ fn main(
     let packed = weights[row_offset + col];
     let base_k = col * 16u;
 
-    // Unpack 16 ternary weights and dot with input
+    // Unpack 16 ternary weights (MSB-first per byte) and dot with input
     for (var i = 0u; i < 16u; i++) {
       let k_idx = base_k + i;
       if (k_idx < params.K) {
-        let code = (packed >> (2u * i)) & 3u;
-        let w = i32(code) - 1;  // branchless: {0,1,2} → {-1,0,+1}
+        // I2_S packing: within each byte, MSB pair is first element
+        let byte_idx = i >> 2u;
+        let pair_idx = 3u - (i & 3u);
+        let code = (packed >> (byte_idx * 8u + pair_idx * 2u)) & 3u;
+        let w = i32(code) - 1;
         acc += w * input[k_idx];
       }
     }

@@ -84,8 +84,14 @@ async function loadGGUF(
       (a, b) => a * Number(b),
       1
     );
-    const elemSize = ggmlTypeSize(tensor.type);
-    const byteSize = Math.ceil(numElements * elemSize);
+    let byteSize: number;
+    if (tensor.type === GGML_TYPE_I2_S) {
+      // I2_S: packed 2-bit data + 32-byte per-tensor scale appended at end
+      byteSize = Math.ceil(numElements / 4) + 32;
+    } else {
+      const elemSize = ggmlTypeSize(tensor.type);
+      byteSize = Math.ceil(numElements * elemSize);
+    }
     const tensorData = buffer.slice(dataOffset, dataOffset + byteSize);
 
     // Remap GGUF tensor names to HuggingFace-style names
@@ -94,9 +100,19 @@ async function loadGGUF(
 
     // Convert tensor data based on type
     if (tensor.type === GGML_TYPE_I2_S) {
-      // I2_S data is already packed: 4 ternary values per byte (2 bits each)
-      // 16 values per u32, which is exactly what the WGSL shaders expect
-      store.uploadSharded(hfName, tensorData, maxBinding);
+      // I2_S: packed 2-bit ternary (MSB-first per byte), 16 values per u32
+      // Last 32 bytes = per-tensor float32 scale (replicated 8×)
+      const packedBytes = Math.ceil(numElements / 4);
+      const weightData = tensorData.slice(0, packedBytes);
+      store.uploadSharded(hfName, weightData, maxBinding);
+
+      // Extract per-tensor scale and fill per-row scale buffer
+      const scaleView = new DataView(tensorData, packedBytes, 32);
+      const tensorScale = scaleView.getFloat32(0, true);
+      const outDim = Number(tensor.shape[0]);
+      const scaleName = hfName.replace(".weight", ".weight_scale");
+      const scaleData = new Float32Array(outDim).fill(tensorScale);
+      store.upload(scaleName, scaleData.buffer as ArrayBuffer);
     } else if (tensor.type === GGML_TYPE_F16) {
       // F16 → F32 conversion (shaders expect f32)
       const f32 = convertF16ToF32(new Uint16Array(tensorData), numElements);
@@ -115,8 +131,8 @@ async function loadGGUF(
 
   console.debug(`[0xBitNet] ${totalTensors} tensors loaded, tieWordEmbeddings=${config.tieWordEmbeddings}`);
 
-  // I2_S format stores ternary as int8 — no separate scale tensors.
-  // Create dummy scale buffers (all 1.0) for each weight that needs one.
+  // I2_S tensors have per-tensor scales extracted above.
+  // Create fallback scale buffers (all 1.0) for any weights still missing scales.
   createDummyScales(store, config, device);
 
   return { config, weights: store };
@@ -187,8 +203,8 @@ function remapGGUFName(name: string): string {
 }
 
 /**
- * Create dummy weight_scale buffers (all 1.0) for I2_S weights.
- * I2_S stores ternary as raw int8 without separate scales.
+ * Create fallback weight_scale buffers (all 1.0) for any weights
+ * that don't already have a scale (e.g. tied embedding LM head).
  */
 function createDummyScales(
   store: WeightStore,

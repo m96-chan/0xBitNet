@@ -30,7 +30,10 @@ against the actual fork's ggml.h, not upstream.
 Download header bytes and parse. Don't assume tensor names or metadata keys.
 - Metadata prefix = `general.architecture` value (e.g. "bitnet-b1.58"), NOT "llama"/"bitnet"
 - BitNet 2B-4T has `attn_sub_norm`/`ffn_sub_norm` (shared per-block norms), not per-projection norms
-- I2_S weights are ALREADY packed: 4 ternary values per byte (2 bits each), 16 per u32.
+- I2_S weights are ALREADY packed: 4 ternary values per byte, MSB-first (bits[7:6]=elem0).
   Upload raw bytes directly — do NOT repack. The data is NOT unpacked int8 {-1,0,1}.
+- I2_S byte size = numElements/4 + 32. Last 32 bytes = per-tensor float32 scale (×8 replicated).
+- I2_S bit extraction order: within each byte, MSB pair is first element (b>>6, b>>4, b>>2, b>>0).
+  When reading as u32 little-endian, use: shift = (i/4)*8 + (3 - i%4)*2, NOT naive 2*i.
 - `token_embd.weight` is F16 (type=1), not F32
 - No `output.weight` tensor → tied embeddings (tieWordEmbeddings=true)
