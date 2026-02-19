@@ -94,9 +94,9 @@ async function loadGGUF(
 
     // Convert tensor data based on type
     if (tensor.type === GGML_TYPE_I2_S) {
-      // I2_S ternary weights: repack int8 {-1,0,1} → packed 2-bit u32
-      const packed = packTernaryI2S(new Int8Array(tensorData), numElements);
-      store.uploadSharded(hfName, packed.buffer as ArrayBuffer, maxBinding);
+      // I2_S data is already packed: 4 ternary values per byte (2 bits each)
+      // 16 values per u32, which is exactly what the WGSL shaders expect
+      store.uploadSharded(hfName, tensorData, maxBinding);
     } else if (tensor.type === GGML_TYPE_F16) {
       // F16 → F32 conversion (shaders expect f32)
       const f32 = convertF16ToF32(new Uint16Array(tensorData), numElements);
@@ -145,32 +145,6 @@ function convertF16ToF32(src: Uint16Array, numElements: number): Float32Array {
     }
     dst[i] = sign ? -f : f;
   }
-  return dst;
-}
-
-/**
- * Repack I2_S int8 ternary values into packed 2-bit u32 format.
- * Input:  int8 array where each byte is {-1, 0, +1}
- * Output: Uint32Array where each u32 holds 16 ternary codes.
- *         code = value + 1  →  {-1,0,+1} → {0,1,2}
- *         packed |= (code << (2 * i)) for i in 0..15
- */
-function packTernaryI2S(src: Int8Array, numElements: number): Uint32Array {
-  const numPacked = Math.ceil(numElements / 16);
-  const dst = new Uint32Array(numPacked);
-
-  for (let p = 0; p < numPacked; p++) {
-    let packed = 0;
-    const base = p * 16;
-    for (let i = 0; i < 16; i++) {
-      const idx = base + i;
-      if (idx >= numElements) break;
-      const code = src[idx] + 1; // {-1,0,1} → {0,1,2}
-      packed |= (code & 3) << (2 * i);
-    }
-    dst[p] = packed;
-  }
-
   return dst;
 }
 

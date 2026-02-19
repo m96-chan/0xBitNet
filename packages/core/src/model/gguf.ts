@@ -36,7 +36,7 @@ export const GGML_TYPE_F64 = 28;
 export const GGML_TYPE_BF16 = 30;
 export const GGML_TYPE_TQ1_0 = 34;
 export const GGML_TYPE_TQ2_0 = 35;
-export const GGML_TYPE_I2_S = 36; // ternary {-1, 0, 1} stored as int8
+export const GGML_TYPE_I2_S = 36; // ternary {-1, 0, 1} packed 2-bit (4 values/byte)
 
 /** Bytes per element for GGML types (fractional for sub-byte) */
 export function ggmlTypeSize(type: number): number {
@@ -62,7 +62,7 @@ export function ggmlTypeSize(type: number): number {
     case GGML_TYPE_TQ2_0:
       return 66 / 256; // 66 bytes per 256 elements
     case GGML_TYPE_I2_S:
-      return 1; // ternary stored as int8, 1 byte per element
+      return 0.25; // 4 ternary values packed per byte (2 bits each)
     default:
       throw new Error(`Unsupported GGML type: ${type}`);
   }
