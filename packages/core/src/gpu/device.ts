@@ -40,9 +40,9 @@ export async function initGPU(existingDevice?: GPUDevice): Promise<GPUContext> {
 
   const requiredLimits: Record<string, number> = {};
 
-  // Request max buffer size for large weight tensors
-  const maxBufferSize = adapter.limits.maxStorageBufferBindingSize;
-  requiredLimits.maxStorageBufferBindingSize = maxBufferSize;
+  // Request max buffer sizes for large weight tensors
+  requiredLimits.maxBufferSize = adapter.limits.maxBufferSize;
+  requiredLimits.maxStorageBufferBindingSize = adapter.limits.maxStorageBufferBindingSize;
 
   // Request max buffer count for bind groups
   const maxBuffersPerGroup =
