@@ -91,7 +91,14 @@ async function loadGGUF(
     // Remap GGUF tensor names to HuggingFace-style names
     const hfName = remapGGUFName(tensor.name);
     console.debug(`[0xBitNet] tensor: ${tensor.name} → ${hfName} (type=${tensor.type}, ${byteSize} bytes)`);
-    store.uploadSharded(hfName, tensorData, maxBinding);
+
+    // I2_S ternary weights: repack int8 {-1,0,1} → packed 2-bit u32
+    if (tensor.type === GGML_TYPE_I2_S) {
+      const packed = packTernaryI2S(new Int8Array(tensorData), numElements);
+      store.uploadSharded(hfName, packed.buffer as ArrayBuffer, maxBinding);
+    } else {
+      store.uploadSharded(hfName, tensorData, maxBinding);
+    }
 
     onProgress?.({
       phase: "upload",
@@ -101,11 +108,39 @@ async function loadGGUF(
     });
   }
 
+  console.debug(`[0xBitNet] ${totalTensors} tensors loaded, tieWordEmbeddings=${config.tieWordEmbeddings}`);
+
   // I2_S format stores ternary as int8 — no separate scale tensors.
   // Create dummy scale buffers (all 1.0) for each weight that needs one.
   createDummyScales(store, config, device);
 
   return { config, weights: store };
+}
+
+/**
+ * Repack I2_S int8 ternary values into packed 2-bit u32 format.
+ * Input:  int8 array where each byte is {-1, 0, +1}
+ * Output: Uint32Array where each u32 holds 16 ternary codes.
+ *         code = value + 1  →  {-1,0,+1} → {0,1,2}
+ *         packed |= (code << (2 * i)) for i in 0..15
+ */
+function packTernaryI2S(src: Int8Array, numElements: number): Uint32Array {
+  const numPacked = Math.ceil(numElements / 16);
+  const dst = new Uint32Array(numPacked);
+
+  for (let p = 0; p < numPacked; p++) {
+    let packed = 0;
+    const base = p * 16;
+    for (let i = 0; i < 16; i++) {
+      const idx = base + i;
+      if (idx >= numElements) break;
+      const code = src[idx] + 1; // {-1,0,1} → {0,1,2}
+      packed |= (code & 3) << (2 * i);
+    }
+    dst[p] = packed;
+  }
+
+  return dst;
 }
 
 /**
