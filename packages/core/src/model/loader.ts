@@ -236,10 +236,55 @@ function configFromSafetensors(
  * Fetch with Cache API support.
  * On first load, stores in Cache API for instant subsequent loads.
  */
+const IDB_NAME = "0xbitnet";
+const IDB_STORE = "models";
+
+function openModelDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function idbGet(db: IDBDatabase, key: string): Promise<ArrayBuffer | undefined> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => resolve(req.result as ArrayBuffer | undefined);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function idbPut(db: IDBDatabase, key: string, value: ArrayBuffer): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 async function fetchModel(
   url: string,
   onProgress: (loaded: number, total: number) => void
 ): Promise<ArrayBuffer> {
+  // Try IndexedDB cache first
+  if (typeof indexedDB !== "undefined") {
+    try {
+      const db = await openModelDB();
+      const cached = await idbGet(db, url);
+      db.close();
+      if (cached) {
+        onProgress(cached.byteLength, cached.byteLength);
+        return cached;
+      }
+    } catch {
+      // IndexedDB unavailable — fall through to fetch
+    }
+  }
+
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch model: ${response.status} ${response.statusText}`);
@@ -272,6 +317,17 @@ async function fetchModel(
   for (const chunk of chunks) {
     buffer.set(chunk, offset);
     offset += chunk.byteLength;
+  }
+
+  // Save to IndexedDB for next time
+  if (typeof indexedDB !== "undefined") {
+    try {
+      const db = await openModelDB();
+      await idbPut(db, url, buffer.buffer);
+      db.close();
+    } catch {
+      // Quota exceeded — skip
+    }
   }
 
   return buffer.buffer;
