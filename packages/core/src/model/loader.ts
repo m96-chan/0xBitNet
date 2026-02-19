@@ -1,5 +1,5 @@
 import type { LoadProgress, ModelConfig, WeightFormat } from "../types.js";
-import { GGUFParser, ggmlTypeSize, GGML_TYPE_I2_S } from "./gguf.js";
+import { GGUFParser, ggmlTypeSize, GGML_TYPE_F16, GGML_TYPE_I2_S } from "./gguf.js";
 import { parseSafetensorsHeader, getTensorInfos } from "./safetensors.js";
 import {
   BITNET_2B_4T_CONFIG,
@@ -92,10 +92,15 @@ async function loadGGUF(
     const hfName = remapGGUFName(tensor.name);
     console.debug(`[0xBitNet] tensor: ${tensor.name} → ${hfName} (type=${tensor.type}, ${byteSize} bytes)`);
 
-    // I2_S ternary weights: repack int8 {-1,0,1} → packed 2-bit u32
+    // Convert tensor data based on type
     if (tensor.type === GGML_TYPE_I2_S) {
+      // I2_S ternary weights: repack int8 {-1,0,1} → packed 2-bit u32
       const packed = packTernaryI2S(new Int8Array(tensorData), numElements);
       store.uploadSharded(hfName, packed.buffer as ArrayBuffer, maxBinding);
+    } else if (tensor.type === GGML_TYPE_F16) {
+      // F16 → F32 conversion (shaders expect f32)
+      const f32 = convertF16ToF32(new Uint16Array(tensorData), numElements);
+      store.uploadSharded(hfName, f32.buffer as ArrayBuffer, maxBinding);
     } else {
       store.uploadSharded(hfName, tensorData, maxBinding);
     }
@@ -115,6 +120,32 @@ async function loadGGUF(
   createDummyScales(store, config, device);
 
   return { config, weights: store };
+}
+
+/**
+ * Convert IEEE 754 half-precision (F16) to single-precision (F32).
+ */
+function convertF16ToF32(src: Uint16Array, numElements: number): Float32Array {
+  const dst = new Float32Array(numElements);
+  for (let i = 0; i < numElements; i++) {
+    const h = src[i];
+    const sign = (h >> 15) & 1;
+    const exp = (h >> 10) & 0x1f;
+    const frac = h & 0x3ff;
+
+    let f: number;
+    if (exp === 0) {
+      // Subnormal or zero
+      f = (frac / 1024) * Math.pow(2, -14);
+    } else if (exp === 31) {
+      // Inf or NaN
+      f = frac === 0 ? Infinity : NaN;
+    } else {
+      f = (1 + frac / 1024) * Math.pow(2, exp - 15);
+    }
+    dst[i] = sign ? -f : f;
+  }
+  return dst;
 }
 
 /**
