@@ -84,7 +84,9 @@ async function loadGGUF(
     const byteSize = Math.ceil(numElements * elemSize);
     const tensorData = buffer.slice(dataOffset, dataOffset + byteSize);
 
-    store.uploadSharded(tensor.name, tensorData, maxBinding);
+    // Remap GGUF tensor names to HuggingFace-style names
+    const hfName = remapGGUFName(tensor.name);
+    store.uploadSharded(hfName, tensorData, maxBinding);
 
     onProgress?.({
       phase: "upload",
@@ -94,7 +96,100 @@ async function loadGGUF(
     });
   }
 
+  // I2_S format stores ternary as int8 — no separate scale tensors.
+  // Create dummy scale buffers (all 1.0) for each weight that needs one.
+  createDummyScales(store, config, device);
+
   return { config, weights: store };
+}
+
+/**
+ * Remap llama.cpp GGUF tensor names to HuggingFace-style names.
+ * GGUF: blk.0.attn_q.weight → HF: model.layers.0.self_attn.q_proj.weight
+ */
+function remapGGUFName(name: string): string {
+  // Embedding & output
+  if (name === "token_embd.weight") return "model.embed_tokens.weight";
+  if (name === "output_norm.weight") return "model.norm.weight";
+  if (name === "output.weight") return "lm_head.weight";
+
+  // Block-level tensors: blk.{i}.{component}
+  const m = name.match(/^blk\.(\d+)\.(.+)$/);
+  if (!m) return name; // pass through unknown names
+  const [, layer, rest] = m;
+  const prefix = `model.layers.${layer}`;
+
+  const mapping: Record<string, string> = {
+    // Attention
+    "attn_q.weight": "self_attn.q_proj.weight",
+    "attn_k.weight": "self_attn.k_proj.weight",
+    "attn_v.weight": "self_attn.v_proj.weight",
+    "attn_output.weight": "self_attn.o_proj.weight",
+    // Norms
+    "attn_norm.weight": "input_layernorm.weight",
+    "ffn_norm.weight": "post_attention_layernorm.weight",
+    // FFN
+    "ffn_up.weight": "mlp.up_proj.weight",
+    "ffn_down.weight": "mlp.down_proj.weight",
+    "ffn_gate.weight": "mlp.gate_proj.weight",
+    // BitNet-specific sub-norms (if present)
+    "attn_q.input_norm.weight": "self_attn.q_proj.input_norm.weight",
+    "attn_k.input_norm.weight": "self_attn.k_proj.input_norm.weight",
+    "attn_v.input_norm.weight": "self_attn.v_proj.input_norm.weight",
+    "attn_output.input_norm.weight": "self_attn.o_proj.input_norm.weight",
+    "ffn_up.input_norm.weight": "mlp.up_proj.input_norm.weight",
+    "ffn_down.input_norm.weight": "mlp.down_proj.input_norm.weight",
+    "ffn_gate.input_norm.weight": "mlp.gate_proj.input_norm.weight",
+  };
+
+  const mapped = mapping[rest];
+  return mapped ? `${prefix}.${mapped}` : `${prefix}.${rest}`;
+}
+
+/**
+ * Create dummy weight_scale buffers (all 1.0) for I2_S weights.
+ * I2_S stores ternary as raw int8 without separate scales.
+ */
+function createDummyScales(
+  store: WeightStore,
+  config: ModelConfig,
+  device: GPUDevice
+): void {
+  const scaleNames: { name: string; dim: number }[] = [];
+
+  for (let i = 0; i < config.numHiddenLayers; i++) {
+    const p = `model.layers.${i}`;
+    const hDim = config.hiddenSize;
+    const numHeads = config.numAttentionHeads;
+    const numKV = config.numKeyValueHeads;
+    const headD = hDim / numHeads;
+
+    scaleNames.push(
+      { name: `${p}.self_attn.q_proj.weight_scale`, dim: numHeads * headD },
+      { name: `${p}.self_attn.k_proj.weight_scale`, dim: numKV * headD },
+      { name: `${p}.self_attn.v_proj.weight_scale`, dim: numKV * headD },
+      { name: `${p}.self_attn.o_proj.weight_scale`, dim: hDim },
+      { name: `${p}.mlp.up_proj.weight_scale`, dim: config.intermediateSize },
+      { name: `${p}.mlp.down_proj.weight_scale`, dim: hDim },
+    );
+    if (config.activation !== "relu2") {
+      scaleNames.push({
+        name: `${p}.mlp.gate_proj.weight_scale`,
+        dim: config.intermediateSize,
+      });
+    }
+  }
+  scaleNames.push({
+    name: "lm_head.weight_scale",
+    dim: config.vocabSize,
+  });
+
+  for (const { name, dim } of scaleNames) {
+    if (!store.has(name)) {
+      const data = new Float32Array(dim).fill(1.0);
+      store.upload(name, data.buffer);
+    }
+  }
 }
 
 async function loadSafetensors(
