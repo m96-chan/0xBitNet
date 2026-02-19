@@ -86,6 +86,7 @@ async function loadGGUF(
 
     // Remap GGUF tensor names to HuggingFace-style names
     const hfName = remapGGUFName(tensor.name);
+    console.debug(`[0xBitNet] tensor: ${tensor.name} → ${hfName} (type=${tensor.type}, ${byteSize} bytes)`);
     store.uploadSharded(hfName, tensorData, maxBinding);
 
     onProgress?.({

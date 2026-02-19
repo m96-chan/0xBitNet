@@ -47,6 +47,10 @@ export class WeightStore {
       offset = end;
       shardIdx++;
     }
+    // Also store first shard under the original name for non-sharding-aware code
+    if (shards.length > 0 && !this.buffers.has(name)) {
+      this.buffers.set(name, shards[0]);
+    }
     return shards;
   }
 

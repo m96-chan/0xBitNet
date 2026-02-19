@@ -61,8 +61,17 @@ export class BitNetModel {
     const pipelines = new PipelineManager(device);
     const pool = new BufferPool(device);
 
-    const embedTokens = weights.get("model.embed_tokens.weight")!;
-    const finalNorm = weights.get("model.norm.weight")!;
+    // Helper to get a weight buffer with a clear error on missing
+    function requireWeight(name: string): GPUBuffer {
+      const buf = weights.get(name);
+      if (!buf) {
+        throw new Error(`Missing weight tensor: "${name}"`);
+      }
+      return buf;
+    }
+
+    const embedTokens = requireWeight("model.embed_tokens.weight");
+    const finalNorm = requireWeight("model.norm.weight");
 
     const layers: TransformerBlock[] = [];
     const kvCaches: KVCache[] = [];
@@ -70,87 +79,71 @@ export class BitNetModel {
     for (let i = 0; i < config.numHiddenLayers; i++) {
       const prefix = `model.layers.${i}`;
 
+      const inputLN = requireWeight(`${prefix}.input_layernorm.weight`);
+      const postAttnLN = requireWeight(`${prefix}.post_attention_layernorm.weight`);
+
+      // Helper: get per-projection norm or fall back to layer norm
+      function projNorm(projPath: string, fallback: GPUBuffer): GPUBuffer {
+        return weights.get(`${projPath}.input_norm.weight`) ?? fallback;
+      }
+
       // Attention projections
       const qProj = new BitLinear(
-        device,
-        pipelines,
-        pool,
-        weights.get(`${prefix}.self_attn.q_proj.weight`)!,
-        weights.get(`${prefix}.self_attn.q_proj.weight_scale`)!,
-        weights.get(`${prefix}.self_attn.q_proj.input_norm.weight`) ??
-          weights.get(`${prefix}.input_layernorm.weight`)!,
+        device, pipelines, pool,
+        requireWeight(`${prefix}.self_attn.q_proj.weight`),
+        requireWeight(`${prefix}.self_attn.q_proj.weight_scale`),
+        projNorm(`${prefix}.self_attn.q_proj`, inputLN),
         config.hiddenSize,
         config.numAttentionHeads * headDim(config)
       );
 
       const kProj = new BitLinear(
-        device,
-        pipelines,
-        pool,
-        weights.get(`${prefix}.self_attn.k_proj.weight`)!,
-        weights.get(`${prefix}.self_attn.k_proj.weight_scale`)!,
-        weights.get(`${prefix}.self_attn.k_proj.input_norm.weight`) ??
-          weights.get(`${prefix}.input_layernorm.weight`)!,
+        device, pipelines, pool,
+        requireWeight(`${prefix}.self_attn.k_proj.weight`),
+        requireWeight(`${prefix}.self_attn.k_proj.weight_scale`),
+        projNorm(`${prefix}.self_attn.k_proj`, inputLN),
         config.hiddenSize,
         config.numKeyValueHeads * headDim(config)
       );
 
       const vProj = new BitLinear(
-        device,
-        pipelines,
-        pool,
-        weights.get(`${prefix}.self_attn.v_proj.weight`)!,
-        weights.get(`${prefix}.self_attn.v_proj.weight_scale`)!,
-        weights.get(`${prefix}.self_attn.v_proj.input_norm.weight`) ??
-          weights.get(`${prefix}.input_layernorm.weight`)!,
+        device, pipelines, pool,
+        requireWeight(`${prefix}.self_attn.v_proj.weight`),
+        requireWeight(`${prefix}.self_attn.v_proj.weight_scale`),
+        projNorm(`${prefix}.self_attn.v_proj`, inputLN),
         config.hiddenSize,
         config.numKeyValueHeads * headDim(config)
       );
 
       const oProj = new BitLinear(
-        device,
-        pipelines,
-        pool,
-        weights.get(`${prefix}.self_attn.o_proj.weight`)!,
-        weights.get(`${prefix}.self_attn.o_proj.weight_scale`)!,
-        weights.get(`${prefix}.self_attn.o_proj.input_norm.weight`) ??
-          weights.get(`${prefix}.input_layernorm.weight`)!,
+        device, pipelines, pool,
+        requireWeight(`${prefix}.self_attn.o_proj.weight`),
+        requireWeight(`${prefix}.self_attn.o_proj.weight_scale`),
+        projNorm(`${prefix}.self_attn.o_proj`, inputLN),
         config.numAttentionHeads * headDim(config),
         config.hiddenSize
       );
 
       const attention = new Attention(
-        device,
-        pipelines,
-        pool,
-        config,
-        qProj,
-        kProj,
-        vProj,
-        oProj
+        device, pipelines, pool, config,
+        qProj, kProj, vProj, oProj
       );
 
       // FFN projections
       const upProj = new BitLinear(
-        device,
-        pipelines,
-        pool,
-        weights.get(`${prefix}.mlp.up_proj.weight`)!,
-        weights.get(`${prefix}.mlp.up_proj.weight_scale`)!,
-        weights.get(`${prefix}.mlp.up_proj.input_norm.weight`) ??
-          weights.get(`${prefix}.post_attention_layernorm.weight`)!,
+        device, pipelines, pool,
+        requireWeight(`${prefix}.mlp.up_proj.weight`),
+        requireWeight(`${prefix}.mlp.up_proj.weight_scale`),
+        projNorm(`${prefix}.mlp.up_proj`, postAttnLN),
         config.hiddenSize,
         config.intermediateSize
       );
 
       const downProj = new BitLinear(
-        device,
-        pipelines,
-        pool,
-        weights.get(`${prefix}.mlp.down_proj.weight`)!,
-        weights.get(`${prefix}.mlp.down_proj.weight_scale`)!,
-        weights.get(`${prefix}.mlp.down_proj.input_norm.weight`) ??
-          weights.get(`${prefix}.post_attention_layernorm.weight`)!,
+        device, pipelines, pool,
+        requireWeight(`${prefix}.mlp.down_proj.weight`),
+        requireWeight(`${prefix}.mlp.down_proj.weight_scale`),
+        projNorm(`${prefix}.mlp.down_proj`, postAttnLN),
         config.intermediateSize,
         config.hiddenSize
       );
@@ -158,30 +151,19 @@ export class BitNetModel {
       let gateProj: BitLinear | null = null;
       if (config.activation !== "relu2") {
         gateProj = new BitLinear(
-          device,
-          pipelines,
-          pool,
-          weights.get(`${prefix}.mlp.gate_proj.weight`)!,
-          weights.get(`${prefix}.mlp.gate_proj.weight_scale`)!,
-          weights.get(`${prefix}.mlp.gate_proj.input_norm.weight`) ??
-            weights.get(`${prefix}.post_attention_layernorm.weight`)!,
+          device, pipelines, pool,
+          requireWeight(`${prefix}.mlp.gate_proj.weight`),
+          requireWeight(`${prefix}.mlp.gate_proj.weight_scale`),
+          projNorm(`${prefix}.mlp.gate_proj`, postAttnLN),
           config.hiddenSize,
           config.intermediateSize
         );
       }
 
       const ffn = new FFN(
-        device,
-        pipelines,
-        pool,
-        config,
-        upProj,
-        downProj,
-        gateProj
+        device, pipelines, pool, config,
+        upProj, downProj, gateProj
       );
-
-      const inputLN = weights.get(`${prefix}.input_layernorm.weight`)!;
-      const postAttnLN = weights.get(`${prefix}.post_attention_layernorm.weight`)!;
 
       layers.push(
         new TransformerBlock(
@@ -208,8 +190,8 @@ export class BitNetModel {
         device,
         pipelines,
         pool,
-        weights.get("lm_head.weight")!,
-        weights.get("lm_head.weight_scale")!,
+        requireWeight("lm_head.weight"),
+        requireWeight("lm_head.weight_scale"),
         weights.get("lm_head.input_norm.weight") ?? finalNorm,
         config.hiddenSize,
         config.vocabSize
