@@ -181,9 +181,9 @@ export class BitNetModel {
       kvCaches.push(createKVCache(device, config, maxSeqLen));
     }
 
-    // LM head: either tied to embedding or separate
+    // LM head: tied to embedding if no separate weight exists
     let lmHead: BitLinear | GPUBuffer;
-    if (config.tieWordEmbeddings) {
+    if (config.tieWordEmbeddings || !weights.has("lm_head.weight")) {
       lmHead = embedTokens;
     } else {
       lmHead = new BitLinear(
