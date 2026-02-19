@@ -5,8 +5,8 @@ import type {
   GGUFTensorInfo,
 } from "../types.js";
 
-// GGUF magic: "GGUF" in little-endian
-const GGUF_MAGIC = 0x46475547;
+// GGUF magic: "GGUF" as little-endian uint32
+const GGUF_MAGIC = 0x46554747;
 
 // GGUF metadata value type enum
 const enum MetaType {
