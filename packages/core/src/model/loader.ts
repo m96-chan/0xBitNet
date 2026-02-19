@@ -67,6 +67,10 @@ async function loadGGUF(
   // Derive config from metadata
   const config = configFromGGUFMetadata(gguf.metadata);
 
+  // Detect tied embeddings from tensor presence
+  const hasOutputWeight = gguf.tensors.some((t) => t.name === "output.weight");
+  config.tieWordEmbeddings = !hasOutputWeight;
+
   const store = new WeightStore(device);
   const maxBinding = device.limits.maxStorageBufferBindingSize;
   const totalTensors = gguf.tensors.length;
