@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <title>TL;DR — BitNet Summarizer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 720px;
+      padding: 2rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    header {
+      text-align: center;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    header p {
+      margin-top: 0.5rem;
+      color: #888;
+      font-size: 0.95rem;
+    }
+
+    .badge-row {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      font-weight: 500;
+    }
+
+    .badge.green { background: #1a3a2a; color: #4ade80; }
+    .badge.blue { background: #1a2a3d; color: #60a5fa; }
+    .badge.purple { background: #2a1a3d; color: #a78bfa; }
+
+    #setup-section {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    #setup-section input[type="text"] {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #111;
+      color: #e0e0e0;
+      font-size: 0.9rem;
+    }
+
+    .btn {
+      padding: 0.75rem 2rem;
+      border-radius: 8px;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.95rem;
+      transition: background 0.2s;
+    }
+
+    .btn-primary { background: #166534; color: #fff; }
+    .btn-primary:hover { background: #15803d; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    #status {
+      text-align: center;
+      font-size: 0.85rem;
+      color: #888;
+    }
+
+    .progress-bar {
+      height: 4px;
+      background: #222;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 0.5rem;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: #4ade80;
+      width: 0%;
+      transition: width 0.3s;
+    }
+
+    #main-section {
+      display: none;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 200px;
+      padding: 1rem;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #111;
+      color: #e0e0e0;
+      font-size: 0.95rem;
+      font-family: inherit;
+      resize: vertical;
+      line-height: 1.6;
+    }
+
+    textarea:focus { border-color: #4ade80; outline: none; }
+
+    #summary-output {
+      min-height: 120px;
+      padding: 1rem;
+      border-radius: 8px;
+      background: #111;
+      border: 1px solid #333;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    #summary-output.empty {
+      color: #555;
+      font-style: italic;
+    }
+
+    .controls {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    label { font-size: 0.85rem; color: #888; }
+
+    select {
+      padding: 0.5rem;
+      border-radius: 6px;
+      border: 1px solid #333;
+      background: #111;
+      color: #e0e0e0;
+      font-size: 0.85rem;
+    }
+
+    .stats {
+      font-size: 0.8rem;
+      color: #555;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>TL;DR</h1>
+      <p>Summarize any text — fully local, powered by BitNet on WebGPU</p>
+      <div class="badge-row">
+        <span class="badge green">WebGPU</span>
+        <span class="badge blue">Offline-ready</span>
+        <span class="badge purple">Private</span>
+      </div>
+    </header>
+
+    <div id="setup-section">
+      <input
+        type="text"
+        id="model-url"
+        placeholder="https://huggingface.co/.../model.gguf"
+      />
+      <button class="btn btn-primary" id="load-btn">Load Model</button>
+      <div id="status"></div>
+    </div>
+
+    <div id="main-section">
+      <div>
+        <label for="input-text">Paste your text:</label>
+        <textarea id="input-text" placeholder="Paste an article, email, or document here..."></textarea>
+      </div>
+
+      <div class="controls">
+        <label for="max-tokens">Max output tokens:</label>
+        <select id="max-tokens">
+          <option value="64">Short (64)</option>
+          <option value="128" selected>Medium (128)</option>
+          <option value="256">Long (256)</option>
+        </select>
+        <div style="flex: 1;"></div>
+        <button class="btn btn-primary" id="summarize-btn">Summarize</button>
+      </div>
+
+      <div>
+        <label>Summary:</label>
+        <div id="summary-output" class="empty">Summary will appear here...</div>
+      </div>
+
+      <div class="stats" id="stats"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

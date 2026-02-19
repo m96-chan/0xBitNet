@@ -1,0 +1,76 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Assemble _site
+        run: |
+          mkdir -p _site/chat _site/tldr
+          cp -r examples/web-chat/dist/* _site/chat/
+          cp -r examples/tl-dr-widget/dist/* _site/tldr/
+
+          cat > _site/index.html << 'HTML'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>0xBitNet Examples</title>
+            <style>
+              body { font-family: system-ui, sans-serif; max-width: 600px; margin: 4rem auto; padding: 0 1rem; color: #e0e0e0; background: #121212; }
+              a { color: #90caf9; }
+              h1 { font-size: 1.8rem; }
+              ul { list-style: none; padding: 0; }
+              li { margin: 1rem 0; }
+              li a { display: block; padding: 1rem; border: 1px solid #333; border-radius: 8px; text-decoration: none; transition: background .15s; }
+              li a:hover { background: #1e1e1e; }
+              li a span { display: block; font-size: .85rem; color: #999; margin-top: .25rem; }
+            </style>
+          </head>
+          <body>
+            <h1>0xBitNet Examples</h1>
+            <p>Run BitNet b1.58 ternary LLMs in the browser with WebGPU.</p>
+            <ul>
+              <li><a href="chat/">Web Chat<span>Full-featured chat interface</span></a></li>
+              <li><a href="tldr/">TL;DR Widget<span>Summarisation widget</span></a></li>
+            </ul>
+          </body>
+          </html>
+          HTML
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
