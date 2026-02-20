@@ -27,7 +27,7 @@
 ## Highlights
 
 - **Pure WebGPU** — Custom WGSL kernels for ternary matrix operations (no WASM, no server)
-- **Multi-language** — TypeScript (`0xbitnet`), Rust (`oxbitnet`), Python (`oxbitnet`)
+- **Multi-language** — TypeScript (`0xbitnet`), Rust (`oxbitnet`), Python (`oxbitnet`), C (`oxbitnet-ffi`)
 - **Cross-platform** — Browsers, Node.js, Deno, native apps via wgpu
 - **Chat templates** — Built-in LLaMA 3 chat message formatting
 - **Automatic caching** — IndexedDB (browser) / disk cache (native)
@@ -96,6 +96,29 @@ model.chat(
 model.dispose()
 ```
 
+### C / FFI
+
+```c
+#include "oxbitnet.h"
+
+static int32_t on_token(const char *token, uintptr_t len, void *userdata) {
+    fwrite(token, 1, len, stdout);
+    return 0; /* 0 = continue, non-zero = stop */
+}
+
+int main(void) {
+    OxBitNet *model = oxbitnet_load("model.gguf", NULL);
+
+    OxBitNetChatMessage messages[] = {
+        { .role = "user", .content = "Hello!" },
+    };
+    OxBitNetGenerateOptions opts = oxbitnet_default_generate_options();
+
+    oxbitnet_chat(model, messages, 1, &opts, on_token, NULL);
+    oxbitnet_free(model);
+}
+```
+
 ### Chat Messages (TypeScript)
 
 ```typescript
@@ -124,6 +147,7 @@ More models are planned — see [#1](https://github.com/m96-chan/0xBitNet/issues
 | TypeScript / JS | [`0xbitnet`](https://www.npmjs.com/package/0xbitnet) | `npm install 0xbitnet` |
 | Rust | [`oxbitnet`](https://crates.io/crates/oxbitnet) | `cargo add oxbitnet` |
 | Python | [`oxbitnet`](https://pypi.org/project/oxbitnet/) | `pip install oxbitnet` |
+| C / FFI | `oxbitnet-ffi` | `cargo build -p oxbitnet-ffi --release` |
 
 ## API Overview
 
@@ -154,6 +178,16 @@ More models are planned — see [#1](https://github.com/m96-chan/0xBitNet/issues
 | `model.generate(prompt, on_token)` | Generate with streaming callback |
 | `model.generate_sync(prompt)` | Generate, return full string |
 | `model.dispose()` | Release all GPU resources |
+
+### C / FFI
+
+| Function | Description |
+|----------|-------------|
+| `oxbitnet_load(source, options)` | Load a GGUF model, returns opaque handle |
+| `oxbitnet_chat(model, messages, n, opts, cb, ud)` | Chat with streaming callback |
+| `oxbitnet_generate(model, prompt, opts, cb, ud)` | Generate with streaming callback |
+| `oxbitnet_free(model)` | Release all GPU resources |
+| `oxbitnet_error_message()` | Get last error (thread-local) |
 
 ## Platform Support
 
@@ -212,6 +246,17 @@ pip install oxbitnet
 python packages/rust/crates/oxbitnet-python/examples/chat.py
 ```
 
+### C CLI
+
+Minimal C example using the FFI bindings.
+
+```bash
+cd packages/rust
+cargo build -p oxbitnet-ffi --release
+gcc crates/oxbitnet-ffi/examples/chat.c -Icrates/oxbitnet-ffi -Ltarget/release -loxbitnet_ffi -o chat
+LD_LIBRARY_PATH=target/release ./chat model.gguf "Hello!"
+```
+
 ## Architecture
 
 ```
@@ -227,7 +272,8 @@ python packages/rust/crates/oxbitnet-python/examples/chat.py
 │   └── rust/               # Rust + Python bindings
 │       └── crates/
 │           ├── oxbitnet/           # Rust library (crates.io: oxbitnet)
-│           └── oxbitnet-python/    # Python bindings via PyO3 (PyPI: oxbitnet)
+│           ├── oxbitnet-python/    # Python bindings via PyO3 (PyPI: oxbitnet)
+│           └── oxbitnet-ffi/       # C FFI bindings (cdylib + staticlib)
 ├── examples/
 │   ├── web-chat/           # Chat app demo (Vite)
 │   ├── tl-dr-widget/       # Offline TL;DR widget demo (Vite)
