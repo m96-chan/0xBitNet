@@ -1,5 +1,10 @@
 import type { TokenizerConfig } from "../types.js";
 
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
 /**
  * Tokenizer with support for:
  * - BPE (Byte Pair Encoding) — used by tiktoken-compatible models (2B-4T)
@@ -190,6 +195,46 @@ export class Tokenizer {
 
   get bosTokenId(): number {
     return this.bosId;
+  }
+
+  /** Returns the vocab ID for `<|eot_id|>`, or undefined if not present. */
+  get eotTokenId(): number | undefined {
+    return this.vocab.get("<|eot_id|>");
+  }
+
+  /**
+   * Apply the LLaMA 3 chat template to a list of messages.
+   * Returns token IDs ready for model input, with a trailing assistant header.
+   * Falls back to plain encode() if special tokens are missing.
+   */
+  applyChatTemplate(messages: ChatMessage[]): Uint32Array {
+    const startHeaderId = this.vocab.get("<|start_header_id|>");
+    const endHeaderId = this.vocab.get("<|end_header_id|>");
+    const eotId = this.vocab.get("<|eot_id|>");
+
+    // Fall back to plain encoding if special tokens aren't in vocab
+    if (startHeaderId === undefined || endHeaderId === undefined || eotId === undefined) {
+      const text = messages.map((m) => m.content).join("\n");
+      return this.encode(text);
+    }
+
+    const tokens: number[] = [this.bosId];
+
+    for (const msg of messages) {
+      tokens.push(startHeaderId);
+      tokens.push(...this.encode(msg.role, false));
+      tokens.push(endHeaderId);
+      tokens.push(...this.encode("\n\n" + msg.content, false));
+      tokens.push(eotId);
+    }
+
+    // Trailing assistant header to prompt generation
+    tokens.push(startHeaderId);
+    tokens.push(...this.encode("assistant", false));
+    tokens.push(endHeaderId);
+    tokens.push(...this.encode("\n\n", false));
+
+    return new Uint32Array(tokens);
   }
 
   private bpeEncode(word: string): number[] {

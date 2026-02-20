@@ -1,5 +1,5 @@
 import { BitNet } from "0xbitnet";
-import type { LoadProgress } from "0xbitnet";
+import type { LoadProgress, ChatMessage } from "0xbitnet";
 
 // DOM elements
 const loadSection = document.getElementById("load-section")!;
@@ -78,7 +78,11 @@ async function sendMessage(): Promise<void> {
   const assistantEl = addMessage("assistant", "");
 
   try {
-    for await (const token of bitnet.generate(text, {
+    const messages: ChatMessage[] = [
+      { role: "system", content: "You are a helpful assistant." },
+      { role: "user", content: text },
+    ];
+    for await (const token of bitnet.generate(messages, {
       maxTokens: 512,
       temperature: 0.7,
       topK: 40,

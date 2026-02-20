@@ -31,12 +31,14 @@ export { TransformerBlock } from "./nn/transformer.js";
 export { BitNetModel } from "./nn/model.js";
 export type { DiagnosticResult } from "./nn/model.js";
 export { Tokenizer } from "./tokenizer/tokenizer.js";
+export type { ChatMessage } from "./tokenizer/tokenizer.js";
 
 import type { LoadOptions, GenerateOptions, LoadProgress } from "./types.js";
 import { initGPU } from "./gpu/device.js";
 import { loadModel } from "./model/loader.js";
 import { BitNetModel } from "./nn/model.js";
 import { Tokenizer } from "./tokenizer/tokenizer.js";
+import type { ChatMessage } from "./tokenizer/tokenizer.js";
 
 /**
  * High-level API for BitNet inference in the browser.
@@ -129,15 +131,19 @@ export class BitNet {
    * Yields tokens as they are generated.
    */
   async *generate(
-    prompt: string,
+    prompt: string | ChatMessage[],
     options: GenerateOptions = {}
   ): AsyncGenerator<string> {
     const maxTokens = options.maxTokens ?? 256;
     const temperature = options.temperature ?? 1.0;
     const topK = options.topK ?? 50;
 
-    const inputIds = this.tokenizer.encode(prompt);
+    const inputIds = Array.isArray(prompt)
+      ? this.tokenizer.applyChatTemplate(prompt)
+      : this.tokenizer.encode(prompt);
     this.model.resetKVCache();
+
+    const eotId = this.tokenizer.eotTokenId;
 
     // Prefill
     let logits = this.model.forward(inputIds);
@@ -152,7 +158,7 @@ export class BitNet {
       // Release the logits buffer back to the pool to prevent memory leak
       this.model.releaseBuffer(logits);
 
-      if (nextToken === this.tokenizer.eosTokenId) {
+      if (nextToken === this.tokenizer.eosTokenId || nextToken === eotId) {
         break;
       }
 
