@@ -1,3 +1,3 @@
 [workspace]
-members = ["crates/oxbitnet", "crates/oxbitnet-python", "crates/oxbitnet-ffi"]
+members = ["crates/oxbitnet", "crates/oxbitnet-python", "crates/oxbitnet-ffi", "crates/oxbitnet-java"]
 resolver = "2"

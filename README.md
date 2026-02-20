@@ -27,7 +27,7 @@
 ## Highlights
 
 - **Pure WebGPU** — Custom WGSL kernels for ternary matrix operations (no WASM, no server)
-- **Multi-language** — TypeScript (`0xbitnet`), Rust (`oxbitnet`), Python (`oxbitnet`), C (`oxbitnet-ffi`)
+- **Multi-language** — TypeScript (`0xbitnet`), Rust (`oxbitnet`), Python (`oxbitnet`), Java/Android (`oxbitnet-java`), C (`oxbitnet-ffi`)
 - **Cross-platform** — Browsers, Node.js, Deno, native apps via wgpu
 - **Chat templates** — Built-in LLaMA 3 chat message formatting
 - **Automatic caching** — IndexedDB (browser) / disk cache (native)
@@ -96,6 +96,24 @@ model.chat(
 model.dispose()
 ```
 
+### Java
+
+```java
+import io.github.m96chan.oxbitnet.*;
+import java.util.List;
+
+try (BitNet model = BitNet.loadSync("model.gguf")) {
+    model.chat(
+        List.of(new ChatMessage("user", "Hello!")),
+        token -> {
+            System.out.print(token);
+            return true;
+        },
+        new GenerateOptions().temperature(0.7f)
+    );
+}
+```
+
 ### C / FFI
 
 ```c
@@ -147,6 +165,7 @@ More models are planned — see [#1](https://github.com/m96-chan/0xBitNet/issues
 | TypeScript / JS | [`0xbitnet`](https://www.npmjs.com/package/0xbitnet) | `npm install 0xbitnet` |
 | Rust | [`oxbitnet`](https://crates.io/crates/oxbitnet) | `cargo add oxbitnet` |
 | Python | [`oxbitnet`](https://pypi.org/project/oxbitnet/) | `pip install oxbitnet` |
+| Java / Android | `oxbitnet-java` | `cargo build -p oxbitnet-java --release` |
 | C / FFI | `oxbitnet-ffi` | `cargo build -p oxbitnet-ffi --release` |
 
 ## API Overview
@@ -178,6 +197,15 @@ More models are planned — see [#1](https://github.com/m96-chan/0xBitNet/issues
 | `model.generate(prompt, on_token)` | Generate with streaming callback |
 | `model.generate_sync(prompt)` | Generate, return full string |
 | `model.dispose()` | Release all GPU resources |
+
+### Java
+
+| Method | Description |
+|--------|-------------|
+| `BitNet.loadSync(source, options?)` | Load a GGUF model |
+| `model.chat(messages, callback, options?)` | Chat with streaming callback |
+| `model.generate(prompt, callback, options?)` | Generate with streaming callback |
+| `model.dispose()` / `model.close()` | Release all GPU resources (AutoCloseable) |
 
 ### C / FFI
 
@@ -246,6 +274,18 @@ pip install oxbitnet
 python packages/rust/crates/oxbitnet-python/examples/chat.py
 ```
 
+### Java CLI
+
+Minimal Java chat example using JNI bindings.
+
+```bash
+cd packages/rust
+cargo build -p oxbitnet-java --release
+cd crates/oxbitnet-java/examples
+javac -cp ../java/src/main/java:. Chat.java
+java -Djava.library.path=../../../../target/release -cp ../java/src/main/java:. Chat model.gguf "Hello!"
+```
+
 ### C CLI
 
 Minimal C example using the FFI bindings.
@@ -273,6 +313,7 @@ LD_LIBRARY_PATH=target/release ./chat model.gguf "Hello!"
 │       └── crates/
 │           ├── oxbitnet/           # Rust library (crates.io: oxbitnet)
 │           ├── oxbitnet-python/    # Python bindings via PyO3 (PyPI: oxbitnet)
+│           ├── oxbitnet-java/      # Java/JNI bindings (Android-ready)
 │           └── oxbitnet-ffi/       # C FFI bindings (cdylib + staticlib)
 ├── examples/
 │   ├── web-chat/           # Chat app demo (Vite)
@@ -287,6 +328,7 @@ See [Architecture](docs/architecture.md) for data flow and internals.
 
 - **TypeScript/JS**: Node.js 18+, a WebGPU-capable environment
 - **Rust**: Rust 1.75+, a Vulkan/Metal/DX12-capable GPU
+- **Java**: JDK 17+, a Vulkan/Metal/DX12-capable GPU
 - **Python**: Python 3.9+, `pip install oxbitnet`
 
 ## Contributing
