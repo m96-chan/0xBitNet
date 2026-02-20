@@ -23,7 +23,7 @@ export class BitLinear {
   // Weight buffers (on GPU)
   private packedWeights: GPUBuffer; // [outDim, inDim/16] u32
   private weightScales: GPUBuffer; // [outDim] f32
-  private normWeight: GPUBuffer; // [inDim] f32
+  private normWeight: GPUBuffer | null; // [inDim] f32 or null (skip RMSNorm)
 
   private inDim: number;
   private outDim: number;
@@ -35,7 +35,7 @@ export class BitLinear {
     pool: BufferPool,
     packedWeights: GPUBuffer,
     weightScales: GPUBuffer,
-    normWeight: GPUBuffer,
+    normWeight: GPUBuffer | null,
     inDim: number,
     outDim: number
   ) {
@@ -61,12 +61,17 @@ export class BitLinear {
     N: number,
     encoder: GPUCommandEncoder
   ): GPUBuffer {
-    // Step 1: RMSNorm
-    const normed = this.pool.acquire(
-      N * this.inDim * 4,
-      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
-    );
-    this.dispatchRMSNorm(encoder, input, normed, N);
+    // Step 1: RMSNorm (optional — only when sub-norm weight is provided)
+    let normed: GPUBuffer;
+    if (this.normWeight) {
+      normed = this.pool.acquire(
+        N * this.inDim * 4,
+        GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+      );
+      this.dispatchRMSNorm(encoder, input, normed, N);
+    } else {
+      normed = input;
+    }
 
     // Step 2: Quantize (absmax int8)
     const quantized = this.pool.acquire(
@@ -92,7 +97,9 @@ export class BitLinear {
     }
 
     // Release intermediates
-    this.pool.release(normed);
+    if (this.normWeight) {
+      this.pool.release(normed);
+    }
     this.pool.release(quantized);
     this.pool.release(inputScales);
 
@@ -121,7 +128,7 @@ export class BitLinear {
       layout: bindGroupLayout,
       entries: [
         { binding: 0, resource: { buffer: input } },
-        { binding: 1, resource: { buffer: this.normWeight } },
+        { binding: 1, resource: { buffer: this.normWeight! } },
         { binding: 2, resource: { buffer: output } },
         { binding: 3, resource: { buffer: paramsBuffer } },
       ],

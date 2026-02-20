@@ -9,11 +9,14 @@ import elementwiseWGSL from "../shaders/elementwise.wgsl";
 /**
  * Feed-Forward Network with two variants:
  *
- * 1. ReLU² (official 2B-4T model):
- *    out = down_proj(relu²(up_proj(x)))
+ * 1. Gated ReLU² (official 2B-4T model):
+ *    out = down_proj(ffn_sub_norm(relu²(gate_proj(x)) * up_proj(x)))
  *
  * 2. SwiGLU (community models):
  *    out = down_proj(silu(gate_proj(x)) * up_proj(x))
+ *
+ * Both use gating. The sub-norm before down_proj is handled inside
+ * down_proj's BitLinear (which has ffn_sub_norm as its normWeight).
  */
 export class FFN {
   private device: GPUDevice;
@@ -51,58 +54,37 @@ export class FFN {
     N: number,
     encoder: GPUCommandEncoder
   ): GPUBuffer {
-    if (this.config.activation === "relu2") {
-      return this.forwardReLU2(input, N, encoder);
+    if (this.gateProj) {
+      // Gated forward: activation(gate(x)) * up(x)
+      // Used by both relu² (2B-4T) and SwiGLU (community models)
+      return this.forwardGated(input, N, encoder);
     } else {
-      return this.forwardSwiGLU(input, N, encoder);
+      // Simple forward: activation(up(x)) — fallback if no gate weights
+      return this.forwardSimple(input, N, encoder);
     }
   }
 
-  private forwardReLU2(
+  private forwardGated(
     input: GPUBuffer,
     N: number,
     encoder: GPUCommandEncoder
   ): GPUBuffer {
-    // up = up_proj(x)
-    const up = this.upProj.forward(input, N, encoder);
+    const activationType = this.config.activation === "relu2" ? 0 : 1;
 
-    // activated = relu²(up)
-    const activated = this.applyActivation(
-      encoder,
-      up,
-      N * this.config.intermediateSize,
-      0 // ReLU²
-    );
-    this.pool.release(up);
-
-    // out = down_proj(activated)
-    const output = this.downProj.forward(activated, N, encoder);
-    this.pool.release(activated);
-
-    return output;
-  }
-
-  private forwardSwiGLU(
-    input: GPUBuffer,
-    N: number,
-    encoder: GPUCommandEncoder
-  ): GPUBuffer {
-    // gate = gate_proj(x)
+    // gate = gate_proj(x), up = up_proj(x)
     const gate = this.gateProj!.forward(input, N, encoder);
-
-    // up = up_proj(x)
     const up = this.upProj.forward(input, N, encoder);
 
-    // gate_activated = silu(gate)
+    // gate_activated = activation(gate)  — relu² or SiLU
     const gateActivated = this.applyActivation(
       encoder,
       gate,
       N * this.config.intermediateSize,
-      1 // SiLU
+      activationType
     );
     this.pool.release(gate);
 
-    // gated = silu(gate) * up
+    // gated = activation(gate) * up
     const gated = this.applyElementwise(
       encoder,
       gateActivated,
@@ -114,8 +96,35 @@ export class FFN {
     this.pool.release(up);
 
     // out = down_proj(gated)
+    // down_proj's BitLinear applies ffn_sub_norm internally before quantization
     const output = this.downProj.forward(gated, N, encoder);
     this.pool.release(gated);
+
+    return output;
+  }
+
+  private forwardSimple(
+    input: GPUBuffer,
+    N: number,
+    encoder: GPUCommandEncoder
+  ): GPUBuffer {
+    const activationType = this.config.activation === "relu2" ? 0 : 1;
+
+    // up = up_proj(x)
+    const up = this.upProj.forward(input, N, encoder);
+
+    // activated = activation(up)
+    const activated = this.applyActivation(
+      encoder,
+      up,
+      N * this.config.intermediateSize,
+      activationType
+    );
+    this.pool.release(up);
+
+    // out = down_proj(activated)
+    const output = this.downProj.forward(activated, N, encoder);
+    this.pool.release(activated);
 
     return output;
   }

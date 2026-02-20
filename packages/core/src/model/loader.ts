@@ -228,13 +228,8 @@ function createDummyScales(
       { name: `${p}.self_attn.o_proj.weight_scale`, dim: hDim },
       { name: `${p}.mlp.up_proj.weight_scale`, dim: config.intermediateSize },
       { name: `${p}.mlp.down_proj.weight_scale`, dim: hDim },
+      { name: `${p}.mlp.gate_proj.weight_scale`, dim: config.intermediateSize },
     );
-    if (config.activation !== "relu2") {
-      scaleNames.push({
-        name: `${p}.mlp.gate_proj.weight_scale`,
-        dim: config.intermediateSize,
-      });
-    }
   }
   scaleNames.push({
     name: "lm_head.weight_scale",
