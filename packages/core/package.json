@@ -1,6 +1,6 @@
 {
   "name": "0xbitnet",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Run BitNet b1.58 ternary LLMs with WebGPU",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -22,7 +22,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && cp ../../README.md .",
     "dev": "tsup --watch",
     "lint": "tsc --noEmit",
     "test": "vitest run",
