@@ -1,0 +1,19 @@
+[package]
+name = "oxbitnet-ffi"
+version = "0.3.1"
+edition = "2021"
+description = "C FFI bindings for oxbitnet — run BitNet b1.58 ternary LLMs with wgpu"
+license = "MIT"
+repository = "https://github.com/m96-chan/0xBitNet"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+oxbitnet = { path = "../oxbitnet" }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+futures = "0.3"
+
+[build-dependencies]
+cbindgen = "0.28"
