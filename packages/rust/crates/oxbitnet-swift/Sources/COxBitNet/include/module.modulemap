@@ -1,0 +1,4 @@
+module COxBitNet {
+    header "oxbitnet.h"
+    export *
+}
