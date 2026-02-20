@@ -1,9 +1,10 @@
-import { BitNet } from "0xbitnet";
-import type { LoadProgress } from "0xbitnet";
+import { BitNet, listCachedModels, deleteCachedModel } from "0xbitnet";
+import type { LoadProgress, ChatMessage } from "0xbitnet";
 
 // DOM
 const setupSection = document.getElementById("setup-section")!;
 const mainSection = document.getElementById("main-section")!;
+const cachedModelsDiv = document.getElementById("cached-models")!;
 const modelUrlInput = document.getElementById("model-url") as HTMLInputElement;
 const loadBtn = document.getElementById("load-btn") as HTMLButtonElement;
 const statusDiv = document.getElementById("status")!;
@@ -15,10 +16,101 @@ const statsDiv = document.getElementById("stats")!;
 
 let bitnet: BitNet | null = null;
 
+// ─── Cached Model Picker ───
+
+function getSelectedModelUrl(): string {
+  const selected = document.querySelector<HTMLInputElement>(
+    'input[name="model-source"]:checked'
+  );
+  if (!selected || selected.value === "__new__") {
+    return modelUrlInput.value.trim();
+  }
+  return selected.value;
+}
+
+async function renderCachedModels(): Promise<void> {
+  const urls = await listCachedModels();
+
+  if (urls.length === 0) {
+    cachedModelsDiv.style.display = "none";
+    modelUrlInput.style.display = "";
+    return;
+  }
+
+  cachedModelsDiv.style.display = "";
+  modelUrlInput.style.display = "none";
+
+  const list = document.createElement("div");
+  list.className = "cached-list";
+
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i];
+    const fileName = url.split("/").pop() || url;
+
+    const row = document.createElement("div");
+    row.className = "cached-item";
+
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "model-source";
+    radio.value = url;
+    radio.id = `cached-${i}`;
+    if (i === 0) radio.checked = true;
+
+    const label = document.createElement("label");
+    label.htmlFor = `cached-${i}`;
+    label.textContent = fileName;
+    label.title = url;
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "delete-btn";
+    delBtn.textContent = "Delete";
+    delBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      await deleteCachedModel(url);
+      await renderCachedModels();
+    });
+
+    row.append(radio, label, delBtn);
+    list.appendChild(row);
+  }
+
+  // "New URL" option
+  const newRow = document.createElement("div");
+  newRow.className = "cached-item";
+
+  const newRadio = document.createElement("input");
+  newRadio.type = "radio";
+  newRadio.name = "model-source";
+  newRadio.value = "__new__";
+  newRadio.id = "cached-new";
+
+  const newLabel = document.createElement("label");
+  newLabel.htmlFor = "cached-new";
+  newLabel.textContent = "New URL:";
+  newLabel.style.flex = "none";
+
+  const newInput = document.createElement("input");
+  newInput.type = "text";
+  newInput.placeholder = "https://huggingface.co/.../model.gguf";
+  newInput.addEventListener("focus", () => {
+    newRadio.checked = true;
+  });
+  newInput.addEventListener("input", () => {
+    modelUrlInput.value = newInput.value;
+  });
+
+  newRow.append(newRadio, newLabel, newInput);
+  list.appendChild(newRow);
+
+  cachedModelsDiv.innerHTML = "";
+  cachedModelsDiv.appendChild(list);
+}
+
 // ─── Load Model ───
 
 loadBtn.addEventListener("click", async () => {
-  const url = modelUrlInput.value.trim();
+  const url = getSelectedModelUrl();
   if (!url) return;
 
   loadBtn.disabled = true;
@@ -40,6 +132,7 @@ loadBtn.addEventListener("click", async () => {
       },
     });
 
+    await renderCachedModels();
     setupSection.style.display = "none";
     mainSection.style.display = "flex";
     inputText.focus();
@@ -65,16 +158,20 @@ async function summarize(): Promise<void> {
   statsDiv.textContent = "";
 
   const maxTokens = parseInt(maxTokensSelect.value, 10);
-  const prompt = `Summarize the following text concisely:\n\n${text}\n\nTL;DR:`;
+  const messages: ChatMessage[] = [
+    { role: "system", content: "You are a helpful assistant. Summarize the user's text concisely." },
+    { role: "user", content: `Summarize the following text:\n\n${text}` },
+  ];
 
   const startTime = performance.now();
   let tokenCount = 0;
 
   try {
-    for await (const token of bitnet.generate(prompt, {
+    for await (const token of bitnet.generate(messages, {
       maxTokens,
       temperature: 0.3,
       topK: 20,
+      repeatPenalty: 1.1,
     })) {
       summaryOutput.textContent += token;
       tokenCount++;
@@ -89,6 +186,10 @@ async function summarize(): Promise<void> {
 
   summarizeBtn.disabled = false;
 }
+
+// ─── Init ───
+
+renderCachedModels();
 
 // ─── WebGPU Check ───
 
