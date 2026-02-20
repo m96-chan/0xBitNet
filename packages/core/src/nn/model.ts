@@ -347,7 +347,7 @@ export class BitNetModel {
     if (N > 1) {
       lmInput = this.pool.acquire(
         this.config.hiddenSize * 4,
-        GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+        GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
       );
       encoder.copyBufferToBuffer(
         normed,
@@ -483,7 +483,7 @@ export class BitNetModel {
     // Stage 6: Extract last token + LM head
     let lmInput: GPUBuffer;
     if (N > 1) {
-      lmInput = this.pool.acquire(this.config.hiddenSize * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
+      lmInput = this.pool.acquire(this.config.hiddenSize * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST);
       enc = this.device.createCommandEncoder();
       enc.copyBufferToBuffer(finalNormed, (N - 1) * this.config.hiddenSize * 4, lmInput, 0, this.config.hiddenSize * 4);
       this.device.queue.submit([enc.finish()]);
