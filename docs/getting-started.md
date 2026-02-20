@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- **Browser:** Chrome 113+, Edge 113+, Firefox Nightly, or Safari 18+ with [WebGPU](https://caniuse.com/webgpu)
+- **WebGPU:** Any environment with a WebGPU device — browsers (Chrome 113+, Edge 113+, Firefox Nightly, Safari 18+), Deno, Node.js with wgpu/Dawn bindings
 - **Node.js:** 18+ (for build tooling / development)
 - **GPU VRAM:** Depends on model size — see estimates below
 
@@ -20,7 +20,7 @@ npm install 0xbitnet
 
 ## Load a Model
 
-Pass a URL to a GGUF file. The model is downloaded, parsed, and uploaded to the GPU automatically. On subsequent loads the cached copy in IndexedDB is used — no re-download needed.
+Pass a URL to a GGUF file. The model is downloaded, parsed, and uploaded to the GPU automatically. In browser environments, subsequent loads use the IndexedDB cache — no re-download needed.
 
 ```typescript
 import { BitNet } from "0xbitnet";
@@ -119,7 +119,7 @@ interface ChatMessage {
 
 ## Model Caching
 
-Models are automatically cached in IndexedDB after the first download. Subsequent calls to `BitNet.load()` with the same URL will use the cached copy instantly.
+In browser environments, models are automatically cached in IndexedDB after the first download. Subsequent calls to `BitNet.load()` with the same URL will use the cached copy instantly. In non-browser environments (Deno, Node.js), caching is skipped gracefully.
 
 ### List Cached Models
 

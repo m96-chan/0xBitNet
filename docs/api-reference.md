@@ -77,7 +77,7 @@ async function initGPU(existingDevice?: GPUDevice): Promise<GPUContext>
 
 **Returns:** `Promise<GPUContext>`
 
-**Throws:** `GPUDeviceError` if WebGPU is unavailable or adapter request fails.
+**Throws:** `GPUDeviceError` if WebGPU is unavailable or adapter/device creation fails.
 
 ### `listCachedModels()`
 

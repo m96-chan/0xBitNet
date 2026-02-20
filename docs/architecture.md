@@ -78,12 +78,12 @@
 │       ├── tokenizer/
 │       │   └── tokenizer.ts        # BPE tokenizer + chat template
 │       │
-│       └── worker/                 # Web Worker support
+│       └── worker/                 # Worker thread support
 │           └── worker.ts           # Worker message handlers
 │
 ├── examples/
-│   ├── web-chat/                   # Browser chat app (Vite)
-│   └── tl-dr-widget/              # Offline TL;DR widget (Vite)
+│   ├── web-chat/                   # Chat app demo (Vite)
+│   └── tl-dr-widget/              # Offline TL;DR widget demo (Vite)
 │
 └── docs/                           # Documentation
 ```
@@ -191,7 +191,7 @@ GPU buffers are recycled through a `BufferPool` instead of creating and destroyi
 
 ### Background Caching
 
-Models are cached in IndexedDB after the first download. Subsequent loads skip the network entirely and read directly from the local store.
+In browser environments, models are cached in IndexedDB after the first download. Subsequent loads skip the network entirely and read directly from the local store.
 
 ### Pre-allocated Uniforms
 

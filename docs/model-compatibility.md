@@ -84,13 +84,13 @@ The loader tries multiple key prefixes (`{arch}.`, `llama.`, `bitnet.`, `bitnet-
 
 0xBitNet currently supports only single-file GGUF models. Split GGUF files (e.g., `model-00001-of-00003.gguf`) are not supported.
 
-### Browser VRAM Limits
+### WebGPU Buffer Size Limits
 
 WebGPU buffer sizes are constrained by `maxStorageBufferBindingSize` (typically 1–2 GB on most GPUs). Large tensors are automatically sharded, but total VRAM must fit the model plus KV cache.
 
-### Browser Storage Quota
+### Storage Quota (Browser)
 
-IndexedDB caching is subject to browser storage quotas. A 2B model GGUF is typically ~700 MB. Browsers may prompt the user for persistent storage permission for large files.
+In browsers, IndexedDB caching is subject to storage quotas. A 2B model GGUF is typically ~700 MB. Browsers may prompt the user for persistent storage permission for large files. In non-browser environments, caching is skipped.
 
 ### No Safetensors Tokenizer
 
@@ -98,4 +98,4 @@ When loading Safetensors files (not GGUF), the tokenizer must be available as a 
 
 ### Precision
 
-All intermediate computations use F32. There is no F16 compute path (WebGPU shader model limitations). This means compute is slower than native F16 would be, but accuracy is higher.
+All intermediate computations use F32. There is no F16 compute path (current WebGPU shader model limitations). This means compute is slower than native F16 would be, but accuracy is higher.

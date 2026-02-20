@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <strong>Run <a href="https://github.com/microsoft/BitNet">Microsoft BitNet b1.58</a> ternary LLMs entirely in the browser with WebGPU.</strong>
+  <strong>Run <a href="https://github.com/microsoft/BitNet">Microsoft BitNet b1.58</a> ternary LLMs with WebGPU — in browsers and native apps.</strong>
 </p>
 
 <p align="center">
@@ -20,15 +20,15 @@
 
 ---
 
-0xBitNet is a TypeScript library that brings 1-bit LLM inference to the web. It implements BitNet's ternary compute kernels in WGSL (WebGPU Shading Language) and wraps them in an ergonomic TypeScript API, distributed as an NPM package.
+0xBitNet is a TypeScript library for 1-bit LLM inference on WebGPU. It implements BitNet's ternary compute kernels in WGSL (WebGPU Shading Language) and wraps them in an ergonomic TypeScript API. Works in any environment with a WebGPU device — browsers, Deno, Node.js with WebGPU-native bindings, or embedded via wgpu/Dawn.
 
 ## Highlights
 
 - **Pure WebGPU** — Custom WGSL kernels for ternary matrix operations (no WASM, no server)
-- **Fully client-side** — Inference runs entirely in the browser
-- **TypeScript-first** — Type-safe API designed for the web ecosystem
+- **Cross-platform** — Runs anywhere WebGPU is available: browsers, Deno, Node.js, native apps
+- **TypeScript-first** — Type-safe API with full ESM and CJS support
 - **Chat templates** — Built-in chat message formatting with `ChatMessage[]`
-- **Automatic caching** — Models are cached in IndexedDB after first download
+- **Automatic caching** — Models are cached in IndexedDB (browser) after first download
 - **Offline-capable** — Works without a network connection after the initial model download
 - **NPM package** — `npm install 0xbitnet`
 
@@ -68,7 +68,7 @@ for await (const token of model.generate(messages, { maxTokens: 128, temperature
 
 ### Cache Management
 
-Models are automatically cached in IndexedDB after the first download.
+In browsers, models are automatically cached in IndexedDB after the first download.
 
 ```typescript
 import { listCachedModels, deleteCachedModel } from "0xbitnet";
@@ -104,13 +104,19 @@ Standalone functions: `initGPU()`, `listCachedModels()`, `deleteCachedModel(url)
 
 Full details in the [API Reference](docs/api-reference.md).
 
-## Browser Compatibility
+## Platform Support
 
-0xBitNet requires a browser with [WebGPU support](https://caniuse.com/webgpu):
+0xBitNet runs on any platform with a [WebGPU](https://www.w3.org/TR/webgpu/) implementation:
 
-- **Chrome / Edge** 113+ (recommended)
-- **Firefox** Nightly (behind flag)
-- **Safari** 18+ (Technology Preview)
+**Browsers:**
+- Chrome / Edge 113+ (recommended)
+- Firefox Nightly (behind flag)
+- Safari 18+
+
+**Native:**
+- Deno (built-in WebGPU)
+- Node.js with [wgpu](https://github.com/gfx-rs/wgpu) or [Dawn](https://dawn.googlesource.com/dawn) bindings
+- Any runtime exposing the WebGPU API (e.g., wgpu-native, Electron)
 
 A dedicated GPU with sufficient VRAM is required (see [Supported Models](#supported-models) for estimates).
 
@@ -118,7 +124,7 @@ A dedicated GPU with sufficient VRAM is required (see [Supported Models](#suppor
 
 ### [Web Chat](https://m96-chan.github.io/0xBitNet/chat/)
 
-A browser-based chat application. Downloads the model on first visit, then runs LLM chat completely on the client — no backend needed.
+A WebGPU-powered chat application. Downloads the model on first visit, then runs LLM chat completely on-device — no backend needed.
 
 ### [TL;DR Widget](https://m96-chan.github.io/0xBitNet/tldr/)
 
@@ -135,10 +141,10 @@ An offline-ready summarization widget. Provides LLM-powered TL;DR without any ne
 │       ├── nn/             # Transformer layers, attention, BitLinear
 │       ├── shaders/        # WGSL compute shaders
 │       ├── tokenizer/      # BPE tokenizer, chat templates
-│       └── worker/         # Web Worker support
+│       └── worker/         # Worker thread support
 ├── examples/
-│   ├── web-chat/           # Browser chat app (Vite)
-│   └── tl-dr-widget/       # Offline TL;DR widget (Vite)
+│   ├── web-chat/           # Chat app demo (Vite)
+│   └── tl-dr-widget/       # Offline TL;DR widget demo (Vite)
 └── docs/                   # Documentation
     ├── getting-started.md
     ├── api-reference.md
@@ -151,7 +157,7 @@ See [Architecture](docs/architecture.md) for data flow and internals.
 ## Prerequisites
 
 - Node.js 18+
-- A WebGPU-capable browser (see [Browser Compatibility](#browser-compatibility))
+- A WebGPU-capable environment (see [Platform Support](#platform-support))
 
 ## Contributing
 
