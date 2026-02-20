@@ -4,6 +4,7 @@ import { TransformerBlock } from "./transformer.js";
 import { BitLinear } from "./bitlinear.js";
 import { Attention, createKVCache } from "./attention.js";
 import { FFN } from "./ffn.js";
+import { type BindGroupCache, createBGCache, clearBGCache, cachedBG } from "./bg-cache.js";
 import { WeightStore } from "../model/weights.js";
 import type { ModelConfig, KVCache } from "../types.js";
 import { headDim } from "../model/config.js";
@@ -47,6 +48,9 @@ export class BitNetModel {
   private decodeEmbeddingUniform?: GPUBuffer;
   private decodeFinalNormUniform?: GPUBuffer;
   private decodeLMHeadUniform?: GPUBuffer;
+
+  // Bind group cache for N=1 decode
+  private bgCache: BindGroupCache = createBGCache();
 
   constructor(
     device: GPUDevice,
@@ -235,12 +239,12 @@ export class BitNetModel {
       lmHead,
       kvCaches
     );
-    model.initDecodeUniforms();
+    model.initDecodeUniforms(maxSeqLen);
     return model;
   }
 
   /** Pre-create uniform buffers for N=1 decode path. */
-  private initDecodeUniforms(): void {
+  private initDecodeUniforms(maxSeqLen: number): void {
     // Token buffer for decode (reused each token via writeBuffer)
     this.decodeTokenBuffer = this.device.createBuffer({
       size: 4,
@@ -279,7 +283,7 @@ export class BitNetModel {
 
     // Cascade to all layers
     for (const layer of this.layers) {
-      layer.initDecodeUniforms();
+      layer.initDecodeUniforms(maxSeqLen);
     }
 
     // LM head BitLinear
@@ -385,10 +389,26 @@ export class BitNetModel {
     for (const cache of this.kvCaches) {
       cache.seqLen = 0;
     }
+    // Clear all bind group caches (buffer identities may change after reset)
+    clearBGCache(this.bgCache);
+    for (const layer of this.layers) {
+      layer.clearBGCache();
+    }
+    if (this.lmHead instanceof BitLinear) {
+      (this.lmHead as BitLinear).clearBGCache();
+    }
   }
 
   /** Destroy all resources */
   dispose(): void {
+    clearBGCache(this.bgCache);
+    for (const layer of this.layers) {
+      layer.clearBGCache();
+      layer.destroyPreAllocated();
+    }
+    if (this.lmHead instanceof BitLinear) {
+      (this.lmHead as BitLinear).clearBGCache();
+    }
     for (const cache of this.kvCaches) {
       cache.key.destroy();
       cache.value.destroy();
@@ -563,15 +583,15 @@ export class BitNetModel {
       paramsBuffer = this.createUniform(paramsData);
     }
 
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: tokenBuffer } },
-        { binding: 1, resource: { buffer: this.embedTokens } },
-        { binding: 2, resource: { buffer: output } },
-        { binding: 3, resource: { buffer: paramsBuffer } },
-      ],
-    });
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: tokenBuffer } },
+      { binding: 1, resource: { buffer: this.embedTokens } },
+      { binding: 2, resource: { buffer: output } },
+      { binding: 3, resource: { buffer: paramsBuffer } },
+    ];
+    const bindGroup = N === 1
+      ? cachedBG(this.bgCache, this.device, "embedding", bindGroupLayout, entries)
+      : this.device.createBindGroup({ layout: bindGroupLayout, entries });
 
     const total = N * this.config.hiddenSize;
     const pass = encoder.beginComputePass();
@@ -610,15 +630,15 @@ export class BitNetModel {
       paramsBuffer = this.createUniform(paramsData);
     }
 
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: input } },
-        { binding: 1, resource: { buffer: this.finalNorm } },
-        { binding: 2, resource: { buffer: output } },
-        { binding: 3, resource: { buffer: paramsBuffer } },
-      ],
-    });
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: input } },
+      { binding: 1, resource: { buffer: this.finalNorm } },
+      { binding: 2, resource: { buffer: output } },
+      { binding: 3, resource: { buffer: paramsBuffer } },
+    ];
+    const bindGroup = N === 1
+      ? cachedBG(this.bgCache, this.device, "finalNorm", bindGroupLayout, entries)
+      : this.device.createBindGroup({ layout: bindGroupLayout, entries });
 
     const pass = encoder.beginComputePass();
     pass.setPipeline(pipeline);
@@ -659,15 +679,15 @@ export class BitNetModel {
       paramsBuffer = this.createUniform(paramsData);
     }
 
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: input } },
-        { binding: 1, resource: { buffer: this.embedTokens } },
-        { binding: 2, resource: { buffer: output } },
-        { binding: 3, resource: { buffer: paramsBuffer } },
-      ],
-    });
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: input } },
+      { binding: 1, resource: { buffer: this.embedTokens } },
+      { binding: 2, resource: { buffer: output } },
+      { binding: 3, resource: { buffer: paramsBuffer } },
+    ];
+    const bindGroup = N === 1
+      ? cachedBG(this.bgCache, this.device, "lmHead", bindGroupLayout, entries)
+      : this.device.createBindGroup({ layout: bindGroupLayout, entries });
 
     const totalWorkgroups = N * V;
     const wgX = Math.min(totalWorkgroups, 65535);

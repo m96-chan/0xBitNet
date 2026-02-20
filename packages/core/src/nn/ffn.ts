@@ -1,6 +1,7 @@
 import { PipelineManager } from "../gpu/pipeline.js";
 import { BufferPool } from "../gpu/buffer-pool.js";
 import { BitLinear } from "./bitlinear.js";
+import { type BindGroupCache, createBGCache, clearBGCache, cachedBG } from "./bg-cache.js";
 import type { ModelConfig } from "../types.js";
 
 import activationWGSL from "../shaders/activation.wgsl";
@@ -31,6 +32,9 @@ export class FFN {
   // Pre-created uniform buffers for N=1 decode (static params)
   private decodeActivationUniform?: GPUBuffer;
   private decodeElementwiseUniform?: GPUBuffer;
+
+  // Bind group cache for N=1 decode
+  private bgCache: BindGroupCache = createBGCache();
 
   constructor(
     device: GPUDevice,
@@ -186,14 +190,14 @@ export class FFN {
       paramsBuffer = this.createUniform(paramsData);
     }
 
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: input } },
-        { binding: 1, resource: { buffer: output } },
-        { binding: 2, resource: { buffer: paramsBuffer } },
-      ],
-    });
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: input } },
+      { binding: 1, resource: { buffer: output } },
+      { binding: 2, resource: { buffer: paramsBuffer } },
+    ];
+    const bindGroup = N === 1
+      ? cachedBG(this.bgCache, this.device, "activation", bindGroupLayout, entries)
+      : this.device.createBindGroup({ layout: bindGroupLayout, entries });
 
     const pass = encoder.beginComputePass();
     pass.setPipeline(pipeline);
@@ -233,15 +237,15 @@ export class FFN {
       paramsBuffer = this.createUniform(paramsData);
     }
 
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: a } },
-        { binding: 1, resource: { buffer: b } },
-        { binding: 2, resource: { buffer: output } },
-        { binding: 3, resource: { buffer: paramsBuffer } },
-      ],
-    });
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: a } },
+      { binding: 1, resource: { buffer: b } },
+      { binding: 2, resource: { buffer: output } },
+      { binding: 3, resource: { buffer: paramsBuffer } },
+    ];
+    const bindGroup = N === 1
+      ? cachedBG(this.bgCache, this.device, "elementwise", bindGroupLayout, entries)
+      : this.device.createBindGroup({ layout: bindGroupLayout, entries });
 
     const pass = encoder.beginComputePass();
     pass.setPipeline(pipeline);
@@ -250,6 +254,14 @@ export class FFN {
     pass.end();
 
     return output;
+  }
+
+  /** Clear the bind group cache (call on KV cache reset). */
+  clearBGCache(): void {
+    clearBGCache(this.bgCache);
+    this.upProj.clearBGCache();
+    this.downProj.clearBGCache();
+    this.gateProj?.clearBGCache();
   }
 
   private createUniform(data: ArrayBuffer): GPUBuffer {

@@ -1,6 +1,7 @@
 import { PipelineManager } from "../gpu/pipeline.js";
 import { BufferPool } from "../gpu/buffer-pool.js";
 import { BitLinear } from "./bitlinear.js";
+import { type BindGroupCache, createBGCache, clearBGCache, cachedBG } from "./bg-cache.js";
 import type { ModelConfig, KVCache } from "../types.js";
 import { headDim } from "../model/config.js";
 
@@ -37,6 +38,13 @@ export class Attention {
   private decodeSoftmaxUniform?: GPUBuffer;
   private decodeAttnVUniform?: GPUBuffer;
 
+  // Pre-allocated score/attnWeight buffers for N=1 decode (sized to maxSeqLen)
+  private decodeScoresBuf?: GPUBuffer;
+  private decodeAttnWeightsBuf?: GPUBuffer;
+
+  // Bind group cache for N=1 decode
+  private bgCache: BindGroupCache = createBGCache();
+
   constructor(
     device: GPUDevice,
     pipelines: PipelineManager,
@@ -59,7 +67,7 @@ export class Attention {
   }
 
   /** Pre-allocate uniform buffers for N=1 decode (updated via writeBuffer each token). */
-  initDecodeUniforms(): void {
+  initDecodeUniforms(maxSeqLen: number): void {
     const mkBuf = (size: number) =>
       this.device.createBuffer({
         size,
@@ -70,6 +78,18 @@ export class Attention {
     this.decodeScoresUniform = mkBuf(24);
     this.decodeSoftmaxUniform = mkBuf(8);
     this.decodeAttnVUniform = mkBuf(20);
+
+    // Pre-allocate score/attnWeight buffers at maxSeqLen so buffer identity
+    // is stable across decode tokens (totalSeq grows but buffer stays the same)
+    const maxScoresSize = this.config.numAttentionHeads * maxSeqLen * 4;
+    this.decodeScoresBuf = this.device.createBuffer({
+      size: maxScoresSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+    this.decodeAttnWeightsBuf = this.device.createBuffer({
+      size: maxScoresSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
 
     this.qProj.initDecodeUniforms();
     this.kProj.initDecodeUniforms();
@@ -105,7 +125,8 @@ export class Attention {
       N,
       numAttentionHeads,
       kvCache.seqLen,
-      N === 1 ? this.decodeRopeQUniform : undefined
+      N === 1 ? this.decodeRopeQUniform : undefined,
+      "ropeQ"
     );
     const kRoped = this.applyRoPE(
       encoder,
@@ -113,7 +134,8 @@ export class Attention {
       N,
       numKeyValueHeads,
       kvCache.seqLen,
-      N === 1 ? this.decodeRopeKUniform : undefined
+      N === 1 ? this.decodeRopeKUniform : undefined,
+      "ropeK"
     );
 
     this.pool.release(qBuf);
@@ -133,7 +155,8 @@ export class Attention {
       kvCache.key,
       N,
       totalSeq,
-      N === 1 ? this.decodeScoresUniform : undefined
+      N === 1 ? this.decodeScoresUniform : undefined,
+      N === 1 ? this.decodeScoresBuf : undefined
     );
     this.pool.release(qRoped);
 
@@ -143,9 +166,10 @@ export class Attention {
       scores,
       numAttentionHeads * N,
       totalSeq,
-      N === 1 ? this.decodeSoftmaxUniform : undefined
+      N === 1 ? this.decodeSoftmaxUniform : undefined,
+      N === 1 ? this.decodeAttnWeightsBuf : undefined
     );
-    this.pool.release(scores);
+    if (N !== 1) this.pool.release(scores);
 
     // Attention output: weights @ V
     const attnOutput = this.computeAttnV(
@@ -156,7 +180,7 @@ export class Attention {
       totalSeq,
       N === 1 ? this.decodeAttnVUniform : undefined
     );
-    this.pool.release(attnWeights);
+    if (N !== 1) this.pool.release(attnWeights);
 
     // Output projection via BitLinear
     const output = this.oProj.forward(attnOutput, N, encoder);
@@ -171,7 +195,8 @@ export class Attention {
     N: number,
     numHeads: number,
     posOffset: number,
-    decodeUniform?: GPUBuffer
+    decodeUniform?: GPUBuffer,
+    bgId?: string
   ): GPUBuffer {
     const { pipeline, bindGroupLayout } = this.pipelines.getOrCreate(
       "rope",
@@ -200,14 +225,14 @@ export class Attention {
       paramsBuffer = this.createUniform(paramsData);
     }
 
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: input } },
-        { binding: 1, resource: { buffer: output } },
-        { binding: 2, resource: { buffer: paramsBuffer } },
-      ],
-    });
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: input } },
+      { binding: 1, resource: { buffer: output } },
+      { binding: 2, resource: { buffer: paramsBuffer } },
+    ];
+    const bindGroup = N === 1 && bgId
+      ? cachedBG(this.bgCache, this.device, bgId, bindGroupLayout, entries)
+      : this.device.createBindGroup({ layout: bindGroupLayout, entries });
 
     const totalPairs = N * numHeads * (this.hDim / 2);
     const pass = encoder.beginComputePass();
@@ -240,7 +265,8 @@ export class Attention {
     K: GPUBuffer,
     N: number,
     S: number,
-    decodeUniform?: GPUBuffer
+    decodeUniform?: GPUBuffer,
+    preAllocated?: GPUBuffer
   ): GPUBuffer {
     const { pipeline, bindGroupLayout } = this.pipelines.getOrCreate(
       "attention_scores",
@@ -249,9 +275,8 @@ export class Attention {
     );
 
     const { numAttentionHeads, numKeyValueHeads } = this.config;
-    const scoresSize = numAttentionHeads * N * S * 4;
-    const scores = this.pool.acquire(
-      scoresSize,
+    const scores = preAllocated ?? this.pool.acquire(
+      numAttentionHeads * N * S * 4,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
 
@@ -272,15 +297,15 @@ export class Attention {
       paramsBuffer = this.createUniform(paramsData);
     }
 
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: Q } },
-        { binding: 1, resource: { buffer: K } },
-        { binding: 2, resource: { buffer: scores } },
-        { binding: 3, resource: { buffer: paramsBuffer } },
-      ],
-    });
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: Q } },
+      { binding: 1, resource: { buffer: K } },
+      { binding: 2, resource: { buffer: scores } },
+      { binding: 3, resource: { buffer: paramsBuffer } },
+    ];
+    const bindGroup = N === 1
+      ? cachedBG(this.bgCache, this.device, "scores", bindGroupLayout, entries)
+      : this.device.createBindGroup({ layout: bindGroupLayout, entries });
 
     const pass = encoder.beginComputePass();
     pass.setPipeline(pipeline);
@@ -300,14 +325,15 @@ export class Attention {
     input: GPUBuffer,
     N: number,
     D: number,
-    decodeUniform?: GPUBuffer
+    decodeUniform?: GPUBuffer,
+    preAllocated?: GPUBuffer
   ): GPUBuffer {
     const { pipeline, bindGroupLayout } = this.pipelines.getOrCreate(
       "softmax",
       softmaxWGSL
     );
 
-    const output = this.pool.acquire(
+    const output = preAllocated ?? this.pool.acquire(
       N * D * 4,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
@@ -325,14 +351,14 @@ export class Attention {
       paramsBuffer = this.createUniform(paramsData);
     }
 
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: input } },
-        { binding: 1, resource: { buffer: output } },
-        { binding: 2, resource: { buffer: paramsBuffer } },
-      ],
-    });
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: input } },
+      { binding: 1, resource: { buffer: output } },
+      { binding: 2, resource: { buffer: paramsBuffer } },
+    ];
+    const bindGroup = N === 1
+      ? cachedBG(this.bgCache, this.device, "softmax", bindGroupLayout, entries)
+      : this.device.createBindGroup({ layout: bindGroupLayout, entries });
 
     const pass = encoder.beginComputePass();
     pass.setPipeline(pipeline);
@@ -380,15 +406,15 @@ export class Attention {
       paramsBuffer = this.createUniform(paramsData);
     }
 
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: attn } },
-        { binding: 1, resource: { buffer: V } },
-        { binding: 2, resource: { buffer: output } },
-        { binding: 3, resource: { buffer: paramsBuffer } },
-      ],
-    });
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: attn } },
+      { binding: 1, resource: { buffer: V } },
+      { binding: 2, resource: { buffer: output } },
+      { binding: 3, resource: { buffer: paramsBuffer } },
+    ];
+    const bindGroup = N === 1
+      ? cachedBG(this.bgCache, this.device, "attnV", bindGroupLayout, entries)
+      : this.device.createBindGroup({ layout: bindGroupLayout, entries });
 
     const total = N * numAttentionHeads * this.hDim;
     const pass = encoder.beginComputePass();
@@ -398,6 +424,23 @@ export class Attention {
     pass.end();
 
     return output;
+  }
+
+  /** Clear the bind group cache (call on KV cache reset). */
+  clearBGCache(): void {
+    clearBGCache(this.bgCache);
+    this.qProj.clearBGCache();
+    this.kProj.clearBGCache();
+    this.vProj.clearBGCache();
+    this.oProj.clearBGCache();
+  }
+
+  /** Destroy pre-allocated attention buffers. */
+  destroyPreAllocated(): void {
+    this.decodeScoresBuf?.destroy();
+    this.decodeAttnWeightsBuf?.destroy();
+    this.decodeScoresBuf = undefined;
+    this.decodeAttnWeightsBuf = undefined;
   }
 
   private createUniform(data: ArrayBuffer): GPUBuffer {

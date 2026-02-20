@@ -2,6 +2,7 @@ import { PipelineManager } from "../gpu/pipeline.js";
 import { BufferPool } from "../gpu/buffer-pool.js";
 import { Attention } from "./attention.js";
 import { FFN } from "./ffn.js";
+import { type BindGroupCache, createBGCache, clearBGCache, cachedBG } from "./bg-cache.js";
 import type { ModelConfig, KVCache } from "../types.js";
 
 import rmsnormWGSL from "../shaders/rmsnorm.wgsl";
@@ -29,6 +30,9 @@ export class TransformerBlock {
   private decodeNormUniform?: GPUBuffer;
   private decodeAddUniform?: GPUBuffer;
 
+  // Bind group cache for N=1 decode
+  private bgCache: BindGroupCache = createBGCache();
+
   constructor(
     device: GPUDevice,
     pipelines: PipelineManager,
@@ -50,7 +54,7 @@ export class TransformerBlock {
   }
 
   /** Pre-create uniform buffers for N=1 decode path (all static). */
-  initDecodeUniforms(): void {
+  initDecodeUniforms(maxSeqLen: number): void {
     {
       const data = new ArrayBuffer(12);
       const v = new DataView(data);
@@ -66,7 +70,7 @@ export class TransformerBlock {
       v.setUint32(4, 0, true); // add
       this.decodeAddUniform = this.createUniform(data);
     }
-    this.attention.initDecodeUniforms();
+    this.attention.initDecodeUniforms(maxSeqLen);
     this.ffn.initDecodeUniforms();
   }
 
@@ -91,7 +95,8 @@ export class TransformerBlock {
       encoder,
       input,
       this.inputLayerNorm,
-      N
+      N,
+      "attnNorm"
     );
     const attnOut = this.attention.forward(normedAttn, N, kvCache, encoder);
     this.pool.release(normedAttn);
@@ -101,7 +106,8 @@ export class TransformerBlock {
       input,
       attnOut,
       N * hidden,
-      N
+      N,
+      "attnAdd"
     );
     this.pool.release(attnOut);
 
@@ -110,7 +116,8 @@ export class TransformerBlock {
       encoder,
       residual1,
       this.postAttnLayerNorm,
-      N
+      N,
+      "ffnNorm"
     );
     const ffnOut = this.ffn.forward(normedFFN, N, encoder);
     this.pool.release(normedFFN);
@@ -120,7 +127,8 @@ export class TransformerBlock {
       residual1,
       ffnOut,
       N * hidden,
-      N
+      N,
+      "ffnAdd"
     );
     this.pool.release(residual1);
     this.pool.release(ffnOut);
@@ -132,7 +140,8 @@ export class TransformerBlock {
     encoder: GPUCommandEncoder,
     input: GPUBuffer,
     weight: GPUBuffer,
-    N: number
+    N: number,
+    bgId?: string
   ): GPUBuffer {
     const { pipeline, bindGroupLayout } = this.pipelines.getOrCreate(
       "rmsnorm",
@@ -157,15 +166,15 @@ export class TransformerBlock {
       paramsBuffer = this.createUniform(paramsData);
     }
 
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: input } },
-        { binding: 1, resource: { buffer: weight } },
-        { binding: 2, resource: { buffer: output } },
-        { binding: 3, resource: { buffer: paramsBuffer } },
-      ],
-    });
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: input } },
+      { binding: 1, resource: { buffer: weight } },
+      { binding: 2, resource: { buffer: output } },
+      { binding: 3, resource: { buffer: paramsBuffer } },
+    ];
+    const bindGroup = N === 1 && bgId
+      ? cachedBG(this.bgCache, this.device, bgId, bindGroupLayout, entries)
+      : this.device.createBindGroup({ layout: bindGroupLayout, entries });
 
     const pass = encoder.beginComputePass();
     pass.setPipeline(pipeline);
@@ -181,7 +190,8 @@ export class TransformerBlock {
     a: GPUBuffer,
     b: GPUBuffer,
     numElements: number,
-    N: number
+    N: number,
+    bgId?: string
   ): GPUBuffer {
     const { pipeline, bindGroupLayout } = this.pipelines.getOrCreate(
       "elementwise_0",
@@ -204,15 +214,15 @@ export class TransformerBlock {
       paramsBuffer = this.createUniform(paramsData);
     }
 
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: a } },
-        { binding: 1, resource: { buffer: b } },
-        { binding: 2, resource: { buffer: output } },
-        { binding: 3, resource: { buffer: paramsBuffer } },
-      ],
-    });
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: a } },
+      { binding: 1, resource: { buffer: b } },
+      { binding: 2, resource: { buffer: output } },
+      { binding: 3, resource: { buffer: paramsBuffer } },
+    ];
+    const bindGroup = N === 1 && bgId
+      ? cachedBG(this.bgCache, this.device, bgId, bindGroupLayout, entries)
+      : this.device.createBindGroup({ layout: bindGroupLayout, entries });
 
     const pass = encoder.beginComputePass();
     pass.setPipeline(pipeline);
@@ -221,6 +231,18 @@ export class TransformerBlock {
     pass.end();
 
     return output;
+  }
+
+  /** Clear the bind group cache (call on KV cache reset). */
+  clearBGCache(): void {
+    clearBGCache(this.bgCache);
+    this.attention.clearBGCache();
+    this.ffn.clearBGCache();
+  }
+
+  /** Destroy pre-allocated attention buffers. */
+  destroyPreAllocated(): void {
+    this.attention.destroyPreAllocated();
   }
 
   private createUniform(data: ArrayBuffer): GPUBuffer {

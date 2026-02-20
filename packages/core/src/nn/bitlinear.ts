@@ -1,5 +1,6 @@
 import { PipelineManager } from "../gpu/pipeline.js";
 import { BufferPool } from "../gpu/buffer-pool.js";
+import { type BindGroupCache, createBGCache, clearBGCache, cachedBG } from "./bg-cache.js";
 import type { ModelConfig } from "../types.js";
 
 // Import shader sources (bundled as strings by tsup)
@@ -34,6 +35,9 @@ export class BitLinear {
   private decodeQuantUniform?: GPUBuffer;
   private decodeGemvParamsUniform?: GPUBuffer;
   private decodeGemvScaleUniform?: GPUBuffer;
+
+  // Bind group cache for N=1 decode
+  private bgCache: BindGroupCache = createBGCache();
 
   constructor(
     device: GPUDevice,
@@ -166,15 +170,15 @@ export class BitLinear {
       paramsBuffer = this.createUniformBuffer(paramsData);
     }
 
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: input } },
-        { binding: 1, resource: { buffer: this.normWeight! } },
-        { binding: 2, resource: { buffer: output } },
-        { binding: 3, resource: { buffer: paramsBuffer } },
-      ],
-    });
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: input } },
+      { binding: 1, resource: { buffer: this.normWeight! } },
+      { binding: 2, resource: { buffer: output } },
+      { binding: 3, resource: { buffer: paramsBuffer } },
+    ];
+    const bindGroup = N === 1
+      ? cachedBG(this.bgCache, this.device, "rmsnorm", bindGroupLayout, entries)
+      : this.device.createBindGroup({ layout: bindGroupLayout, entries });
 
     const pass = encoder.beginComputePass();
     pass.setPipeline(pipeline);
@@ -206,15 +210,15 @@ export class BitLinear {
       paramsBuffer = this.createUniformBuffer(paramsData);
     }
 
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: input } },
-        { binding: 1, resource: { buffer: output } },
-        { binding: 2, resource: { buffer: scales } },
-        { binding: 3, resource: { buffer: paramsBuffer } },
-      ],
-    });
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: input } },
+      { binding: 1, resource: { buffer: output } },
+      { binding: 2, resource: { buffer: scales } },
+      { binding: 3, resource: { buffer: paramsBuffer } },
+    ];
+    const bindGroup = N === 1
+      ? cachedBG(this.bgCache, this.device, "quantize", bindGroupLayout, entries)
+      : this.device.createBindGroup({ layout: bindGroupLayout, entries });
 
     const pass = encoder.beginComputePass();
     pass.setPipeline(pipeline);
@@ -251,17 +255,15 @@ export class BitLinear {
     // Copy from inputScales[0] to uniform
     encoder.copyBufferToBuffer(inputScales, 0, inputScaleBuffer, 0, 4);
 
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: this.packedWeights } },
-        { binding: 1, resource: { buffer: input } },
-        { binding: 2, resource: { buffer: this.weightScales } },
-        { binding: 3, resource: { buffer: paramsBuffer } },
-        { binding: 4, resource: { buffer: inputScaleBuffer } },
-        { binding: 5, resource: { buffer: output } },
-      ],
-    });
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: this.packedWeights } },
+      { binding: 1, resource: { buffer: input } },
+      { binding: 2, resource: { buffer: this.weightScales } },
+      { binding: 3, resource: { buffer: paramsBuffer } },
+      { binding: 4, resource: { buffer: inputScaleBuffer } },
+      { binding: 5, resource: { buffer: output } },
+    ];
+    const bindGroup = cachedBG(this.bgCache, this.device, "gemv", bindGroupLayout, entries);
 
     const pass = encoder.beginComputePass();
     pass.setPipeline(pipeline);
@@ -311,6 +313,11 @@ export class BitLinear {
     pass.setBindGroup(0, bindGroup);
     pass.dispatchWorkgroups(wgM, wgN);
     pass.end();
+  }
+
+  /** Clear the bind group cache (call on KV cache reset). */
+  clearBGCache(): void {
+    clearBGCache(this.bgCache);
   }
 
   private createUniformBuffer(data: ArrayBuffer): GPUBuffer {
