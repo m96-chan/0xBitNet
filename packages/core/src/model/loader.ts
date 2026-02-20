@@ -117,9 +117,17 @@ async function loadGGUF(
       const scaleData = new Float32Array(outDim).fill(tensorScale);
       store.upload(scaleName, scaleData.buffer as ArrayBuffer);
     } else if (tensor.type === GGML_TYPE_F16) {
-      // F16 → F32 conversion (shaders expect f32)
-      const f32 = convertF16ToF32(new Uint16Array(tensorData), numElements);
-      store.uploadSharded(hfName, f32.buffer as ArrayBuffer, maxBinding);
+      if (hfName === "model.embed_tokens.weight") {
+        // Keep embedding as F16 on GPU (shaders decode via unpack2x16float).
+        // This halves the buffer size (656MB vs 1.31GB F32), avoiding
+        // sharding on GPUs with maxStorageBufferBindingSize ≤ 1GB.
+        // Critical: BOS token ID 128000 falls outside 1GB shard range in F32!
+        store.uploadSharded(hfName, tensorData, maxBinding);
+      } else {
+        // Other F16 tensors (e.g., norm weights): convert to F32 for standard shaders
+        const f32 = convertF16ToF32(new Uint16Array(tensorData), numElements);
+        store.uploadSharded(hfName, f32.buffer as ArrayBuffer, maxBinding);
+      }
     } else {
       store.uploadSharded(hfName, tensorData, maxBinding);
     }

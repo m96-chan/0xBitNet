@@ -12,6 +12,20 @@ import embeddingWGSL from "../shaders/embedding.wgsl";
 import rmsnormWGSL from "../shaders/rmsnorm.wgsl";
 import f32MatmulWGSL from "../shaders/f32_matmul.wgsl";
 
+/** Diagnostic result for a single pipeline stage */
+export interface DiagnosticResult {
+  name: string;
+  length: number;
+  min: number;
+  max: number;
+  mean: number;
+  rms: number;
+  nanCount: number;
+  infCount: number;
+  zeroCount: number;
+  first8: number[];
+}
+
 /**
  * Full BitNet model: embedding → N × transformer → final RMSNorm → LM head
  */
@@ -316,6 +330,144 @@ export class BitNetModel {
     }
     this.pool.destroy();
     this.pipelines.clear();
+  }
+
+  /**
+   * GPU diagnostic: run forward pass stage-by-stage, reading back
+   * intermediate buffers to pinpoint where output goes wrong.
+   * Returns diagnostic info for each stage.
+   */
+  async diagnose(
+    tokenIds: Uint32Array
+  ): Promise<DiagnosticResult[]> {
+    const N = tokenIds.length;
+    const results: DiagnosticResult[] = [];
+
+    this.resetKVCache();
+
+    // Upload token IDs
+    const tokenBuffer = this.device.createBuffer({
+      size: tokenIds.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Uint32Array(tokenBuffer.getMappedRange()).set(tokenIds);
+    tokenBuffer.unmap();
+
+    // Stage 1: Embedding
+    let enc = this.device.createCommandEncoder();
+    const embedded = this.dispatchEmbedding(enc, tokenBuffer, N);
+    this.device.queue.submit([enc.finish()]);
+    results.push(await this.readDiag("embedding", embedded, N * this.config.hiddenSize));
+
+    // Stage 2: Layer 0
+    enc = this.device.createCommandEncoder();
+    const layer0out = this.layers[0].forward(embedded, N, this.kvCaches[0], enc);
+    this.device.queue.submit([enc.finish()]);
+    this.kvCaches[0].seqLen += N;
+    results.push(await this.readDiag("layer_0", layer0out, N * this.config.hiddenSize));
+    this.pool.release(embedded);
+
+    // Stage 3: Layer 1
+    enc = this.device.createCommandEncoder();
+    const layer1out = this.layers[1].forward(layer0out, N, this.kvCaches[1], enc);
+    this.device.queue.submit([enc.finish()]);
+    this.kvCaches[1].seqLen += N;
+    results.push(await this.readDiag("layer_1", layer1out, N * this.config.hiddenSize));
+    this.pool.release(layer0out);
+
+    // Stage 4: Remaining layers
+    let hidden = layer1out;
+    for (let i = 2; i < this.layers.length; i++) {
+      enc = this.device.createCommandEncoder();
+      const newHidden = this.layers[i].forward(hidden, N, this.kvCaches[i], enc);
+      this.device.queue.submit([enc.finish()]);
+      this.pool.release(hidden);
+      hidden = newHidden;
+      this.kvCaches[i].seqLen += N;
+    }
+    results.push(await this.readDiag("last_layer", hidden, N * this.config.hiddenSize));
+
+    // Stage 5: Final norm
+    enc = this.device.createCommandEncoder();
+    const finalNormed = this.dispatchFinalNorm(enc, hidden, N);
+    this.device.queue.submit([enc.finish()]);
+    this.pool.release(hidden);
+    results.push(await this.readDiag("final_norm", finalNormed, N * this.config.hiddenSize));
+
+    // Stage 6: Extract last token + LM head
+    let lmInput: GPUBuffer;
+    if (N > 1) {
+      lmInput = this.pool.acquire(this.config.hiddenSize * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
+      enc = this.device.createCommandEncoder();
+      enc.copyBufferToBuffer(finalNormed, (N - 1) * this.config.hiddenSize * 4, lmInput, 0, this.config.hiddenSize * 4);
+      this.device.queue.submit([enc.finish()]);
+      this.pool.release(finalNormed);
+    } else {
+      lmInput = finalNormed;
+    }
+    results.push(await this.readDiag("lm_input", lmInput, this.config.hiddenSize));
+
+    // Stage 7: LM head
+    enc = this.device.createCommandEncoder();
+    let logits: GPUBuffer;
+    if (this.lmHead instanceof BitLinear) {
+      logits = (this.lmHead as BitLinear).forward(lmInput, 1, enc);
+    } else {
+      logits = this.dispatchLMHead(enc, lmInput, 1);
+    }
+    this.device.queue.submit([enc.finish()]);
+    results.push(await this.readDiag("logits_first100", logits, 100));
+
+    // Cleanup
+    this.pool.release(lmInput === finalNormed ? finalNormed : lmInput);
+    this.pool.release(logits);
+
+    return results;
+  }
+
+  /** Read back a GPU buffer and compute diagnostic statistics */
+  private async readDiag(
+    name: string,
+    buffer: GPUBuffer,
+    numFloats: number
+  ): Promise<DiagnosticResult> {
+    const byteSize = numFloats * 4;
+    const staging = this.device.createBuffer({
+      size: byteSize,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+    const enc = this.device.createCommandEncoder();
+    enc.copyBufferToBuffer(buffer, 0, staging, 0, byteSize);
+    this.device.queue.submit([enc.finish()]);
+
+    await staging.mapAsync(GPUMapMode.READ);
+    const data = new Float32Array(staging.getMappedRange().slice(0));
+    staging.unmap();
+    staging.destroy();
+
+    let min = Infinity, max = -Infinity, sum = 0, sumSq = 0;
+    let nanCount = 0, infCount = 0, zeroCount = 0;
+    for (let i = 0; i < data.length; i++) {
+      const v = data[i];
+      if (isNaN(v)) { nanCount++; continue; }
+      if (!isFinite(v)) { infCount++; continue; }
+      if (v === 0) zeroCount++;
+      if (v < min) min = v;
+      if (v > max) max = v;
+      sum += v;
+      sumSq += v * v;
+    }
+    const mean = sum / data.length;
+    const rms = Math.sqrt(sumSq / data.length);
+
+    return {
+      name,
+      length: data.length,
+      min, max, mean, rms,
+      nanCount, infCount, zeroCount,
+      first8: Array.from(data.slice(0, 8)),
+    };
   }
 
   private dispatchEmbedding(

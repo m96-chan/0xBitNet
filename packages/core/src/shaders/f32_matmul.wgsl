@@ -1,8 +1,8 @@
-// F32 GEMV for tied-embedding LM head
+// F32 GEMV for tied-embedding LM head (F16 embedding on GPU)
 // logits[n, v] = sum_d( hidden[n, d] * embed[v, d] )
 //
 // hidden: [N, D] f32 — final hidden states
-// embed:  [V, D] f32 — embedding table (shared with LM head)
+// embed:  [V * D / 2] u32 — embedding table stored as packed f16 pairs
 // output: [N, V] f32 — logits
 //
 // Each workgroup computes one (n, v) element.
@@ -16,7 +16,7 @@ struct Params {
 }
 
 @group(0) @binding(0) var<storage, read> hidden: array<f32>;
-@group(0) @binding(1) var<storage, read> embed: array<f32>;
+@group(0) @binding(1) var<storage, read> embed: array<u32>;
 @group(0) @binding(2) var<storage, read_write> output: array<f32>;
 @group(0) @binding(3) var<uniform> params: Params;
 
@@ -41,12 +41,19 @@ fn main(
   let tid = local_id.x;
 
   // Each thread accumulates a strided slice of D
+  // Process pairs of dimensions for efficiency
   var acc: f32 = 0.0;
   let hidden_base = n * params.D;
   let embed_base = v * params.D;
 
-  for (var d = tid; d < params.D; d += WG_SIZE) {
-    acc += hidden[hidden_base + d] * embed[embed_base + d];
+  // Process two dimensions at a time using packed f16 pairs
+  let D_half = params.D / 2u;
+  for (var dh = tid; dh < D_half; dh += WG_SIZE) {
+    let d = dh * 2u;
+    let packed = embed[embed_base / 2u + dh];
+    let pair = unpack2x16float(packed);
+    acc += hidden[hidden_base + d] * pair.x;
+    acc += hidden[hidden_base + d + 1u] * pair.y;
   }
 
   // Workgroup reduction

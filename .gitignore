@@ -4,3 +4,6 @@ dist/
 *.tsbuildinfo
 .DS_Store
 *.local
+
+# Model files (too large for git)
+models/

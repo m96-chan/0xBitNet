@@ -41,7 +41,10 @@ loadBtn.addEventListener("click", async () => {
     sendBtn.disabled = false;
     userInput.focus();
 
-    addMessage("assistant", "Model loaded! How can I help you?");
+    addMessage("assistant", "Model loaded! Type a message or click 'Diagnose' to run GPU diagnostics.");
+
+    // Run GPU diagnostic automatically after load
+    runDiagnose();
   } catch (err) {
     statusText.textContent = `Error: ${(err as Error).message}`;
     progressFill.style.width = "0%";
@@ -99,6 +102,32 @@ function addMessage(role: "user" | "assistant", text: string): HTMLElement {
   messagesDiv.appendChild(el);
   messagesDiv.scrollTop = messagesDiv.scrollHeight;
   return el;
+}
+
+// ─── GPU Diagnostic ───
+
+async function runDiagnose(): Promise<void> {
+  if (!bitnet) return;
+
+  const diagEl = addMessage("assistant", "Running GPU diagnostic...\n");
+
+  try {
+    const results = await bitnet.diagnose("Hello");
+
+    let report = "=== GPU Diagnostic Results ===\n\n";
+    for (const r of results) {
+      report += `[${r.name}] len=${r.length}\n`;
+      report += `  min=${r.min.toFixed(4)} max=${r.max.toFixed(4)} mean=${r.mean.toFixed(4)} rms=${r.rms.toFixed(4)}\n`;
+      report += `  NaN=${r.nanCount} Inf=${r.infCount} zero=${r.zeroCount}\n`;
+      report += `  first8: [${r.first8.map(v => v.toFixed(4)).join(", ")}]\n\n`;
+    }
+
+    diagEl.textContent = report;
+    console.log("GPU Diagnostic:", results);
+  } catch (err) {
+    diagEl.textContent = `Diagnostic error: ${(err as Error).message}\n${(err as Error).stack}`;
+    console.error("Diagnostic error:", err);
+  }
 }
 
 // ─── WebGPU Check ───

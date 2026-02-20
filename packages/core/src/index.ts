@@ -29,6 +29,7 @@ export { Attention, createKVCache } from "./nn/attention.js";
 export { FFN } from "./nn/ffn.js";
 export { TransformerBlock } from "./nn/transformer.js";
 export { BitNetModel } from "./nn/model.js";
+export type { DiagnosticResult } from "./nn/model.js";
 export { Tokenizer } from "./tokenizer/tokenizer.js";
 
 import type { LoadOptions, GenerateOptions, LoadProgress } from "./types.js";
@@ -163,6 +164,15 @@ export class BitNet {
   /** Release all GPU resources. */
   dispose(): void {
     this.model.dispose();
+  }
+
+  /**
+   * Run GPU diagnostic: forward pass stage-by-stage with readback.
+   * Returns statistics for each intermediate tensor.
+   */
+  async diagnose(prompt = "Hello"): Promise<import("./nn/model.js").DiagnosticResult[]> {
+    const inputIds = this.tokenizer.encode(prompt);
+    return this.model.diagnose(inputIds);
   }
 
   private async sampleToken(
