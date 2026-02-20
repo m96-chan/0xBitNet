@@ -66,6 +66,8 @@ jobs:
           </html>
           HTML
 
+          echo '0xbitnet.m96-chan.dev' > _site/CNAME
+
       - uses: actions/configure-pages@v5
         with:
           enablement: true
