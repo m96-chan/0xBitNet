@@ -109,7 +109,8 @@ async function loadGGUF(
       // Extract per-tensor scale and fill per-row scale buffer
       const scaleView = new DataView(tensorData, packedBytes, 32);
       const tensorScale = scaleView.getFloat32(0, true);
-      const outDim = Number(tensor.shape[0]);
+      // GGUF ne[0]=inDim, ne[1]=outDim (gguf-py reverses PyTorch [outDim, inDim])
+      const outDim = Number(tensor.shape[1]);
       const scaleName = hfName.replace(".weight", ".weight_scale");
       const scaleData = new Float32Array(outDim).fill(tensorScale);
       store.upload(scaleName, scaleData.buffer as ArrayBuffer);
