@@ -137,6 +137,8 @@ export class BitNet {
     const maxTokens = options.maxTokens ?? 256;
     const temperature = options.temperature ?? 1.0;
     const topK = options.topK ?? 50;
+    const repeatPenalty = options.repeatPenalty ?? 1.0;
+    const repeatLastN = options.repeatLastN ?? 64;
 
     const inputIds = Array.isArray(prompt)
       ? this.tokenizer.applyChatTemplate(prompt)
@@ -144,15 +146,21 @@ export class BitNet {
     this.model.resetKVCache();
 
     const eotId = this.tokenizer.eotTokenId;
+    const recentTokens: number[] = [];
 
     // Prefill
     let logits = this.model.forward(inputIds);
 
     for (let i = 0; i < maxTokens; i++) {
+      const window = repeatLastN > 0
+        ? recentTokens.slice(-repeatLastN)
+        : recentTokens;
       const nextToken = await this.sampleToken(
         logits,
         temperature,
-        topK
+        topK,
+        repeatPenalty,
+        window,
       );
 
       // Release the logits buffer back to the pool to prevent memory leak
@@ -162,6 +170,7 @@ export class BitNet {
         break;
       }
 
+      recentTokens.push(nextToken);
       const tokenStr = this.tokenizer.decode([nextToken]);
       options.onToken?.(tokenStr);
       yield tokenStr;
@@ -189,7 +198,9 @@ export class BitNet {
   private async sampleToken(
     logitsBuffer: GPUBuffer,
     temperature: number,
-    topK: number
+    topK: number,
+    repeatPenalty: number,
+    recentTokens: number[],
   ): Promise<number> {
     const vocabSize = this.model.config.vocabSize;
 
@@ -208,6 +219,17 @@ export class BitNet {
     const logits = this.logitsArray;
     logits.set(mapped);
     this.readbackBuffer.unmap();
+
+    // Repetition penalty (llama.cpp style)
+    if (repeatPenalty !== 1.0 && recentTokens.length > 0) {
+      for (const tokenId of recentTokens) {
+        if (logits[tokenId] > 0) {
+          logits[tokenId] /= repeatPenalty;
+        } else {
+          logits[tokenId] *= repeatPenalty;
+        }
+      }
+    }
 
     // Temperature
     if (temperature !== 1.0) {

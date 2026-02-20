@@ -181,6 +181,7 @@ async function sendMessage(): Promise<void> {
       maxTokens: 512,
       temperature: 0.7,
       topK: 40,
+      repeatPenalty: 1.1,
     })) {
       assistantEl.textContent += token;
       messagesDiv.scrollTop = messagesDiv.scrollHeight;

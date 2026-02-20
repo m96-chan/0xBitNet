@@ -78,6 +78,7 @@ export interface GenerateOptions {
   topK?: number;
   topP?: number;
   repeatPenalty?: number;
+  repeatLastN?: number;
   onToken?: (token: string) => void;
 }
 
