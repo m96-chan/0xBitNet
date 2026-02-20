@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/hero.png" alt="0xBitNet — 1-bit Inference on WebGPU" width="720" />
+  <img src="https://raw.githubusercontent.com/m96-chan/0xBitNet/main/assets/hero.png" alt="0xBitNet — 1-bit Inference on WebGPU" width="720" />
 </p>
 
 <h1 align="center">0xBitNet</h1>
