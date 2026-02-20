@@ -148,6 +148,9 @@ export class BitNet {
     const eotId = this.tokenizer.eotTokenId;
     const recentTokens: number[] = [];
 
+    console.debug(`[0xBitNet] generate: ${inputIds.length} input tokens, eotId=${eotId}, temp=${temperature}, topK=${topK}, repeatPenalty=${repeatPenalty}`);
+    console.debug(`[0xBitNet] first 20 token IDs:`, Array.from(inputIds.slice(0, 20)));
+
     // Prefill
     let logits = this.model.forward(inputIds);
 

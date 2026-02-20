@@ -214,9 +214,12 @@ export class Tokenizer {
 
     // Fall back to plain encoding if special tokens aren't in vocab
     if (startHeaderId === undefined || endHeaderId === undefined || eotId === undefined) {
+      console.warn(`[0xBitNet] Chat template fallback: special tokens missing (start_header=${startHeaderId}, end_header=${endHeaderId}, eot=${eotId})`);
       const text = messages.map((m) => m.content).join("\n");
       return this.encode(text);
     }
+
+    console.debug(`[0xBitNet] Chat template: start_header=${startHeaderId}, end_header=${endHeaderId}, eot=${eotId}`);
 
     const tokens: number[] = [this.bosId];
 
