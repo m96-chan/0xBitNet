@@ -11,6 +11,7 @@ import { WeightStore } from "./weights.js";
 export interface LoadResult {
   config: ModelConfig;
   weights: WeightStore;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -146,7 +147,7 @@ async function loadGGUF(
   // Create fallback scale buffers (all 1.0) for any weights still missing scales.
   createDummyScales(store, config, device);
 
-  return { config, weights: store };
+  return { config, weights: store, metadata: gguf.metadata as Record<string, unknown> };
 }
 
 /**

@@ -8,6 +8,7 @@ import type { BufferEntry } from "../types.js";
 export class BufferPool {
   private device: GPUDevice;
   private pools = new Map<number, BufferEntry[]>();
+  private bufferToEntry = new Map<GPUBuffer, BufferEntry>();
   private alignment: number;
 
   constructor(device: GPUDevice, alignment = 256) {
@@ -39,6 +40,7 @@ export class BufferPool {
 
     const buffer = this.device.createBuffer({ size: aligned, usage });
     const entry: BufferEntry = { buffer, size: aligned, inUse: true };
+    this.bufferToEntry.set(buffer, entry);
 
     if (!pool) {
       this.pools.set(usage, [entry]);
@@ -51,13 +53,9 @@ export class BufferPool {
 
   /** Release a buffer back to the pool for reuse. */
   release(buffer: GPUBuffer): void {
-    for (const pool of this.pools.values()) {
-      for (const entry of pool) {
-        if (entry.buffer === buffer) {
-          entry.inUse = false;
-          return;
-        }
-      }
+    const entry = this.bufferToEntry.get(buffer);
+    if (entry) {
+      entry.inUse = false;
     }
   }
 
@@ -69,5 +67,6 @@ export class BufferPool {
       }
     }
     this.pools.clear();
+    this.bufferToEntry.clear();
   }
 }

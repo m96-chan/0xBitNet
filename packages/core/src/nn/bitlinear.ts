@@ -29,6 +29,12 @@ export class BitLinear {
   private outDim: number;
   private kPacked: number;
 
+  // Pre-created uniform buffers for N=1 decode (static params)
+  private decodeNormUniform?: GPUBuffer;
+  private decodeQuantUniform?: GPUBuffer;
+  private decodeGemvParamsUniform?: GPUBuffer;
+  private decodeGemvScaleUniform?: GPUBuffer;
+
   constructor(
     device: GPUDevice,
     pipelines: PipelineManager,
@@ -48,6 +54,37 @@ export class BitLinear {
     this.inDim = inDim;
     this.outDim = outDim;
     this.kPacked = Math.ceil(inDim / 16);
+  }
+
+  /** Pre-create uniform buffers for the N=1 decode path (all static). */
+  initDecodeUniforms(): void {
+    if (this.normWeight) {
+      const data = new ArrayBuffer(12);
+      const v = new DataView(data);
+      v.setUint32(0, 1, true);
+      v.setUint32(4, this.inDim, true);
+      v.setFloat32(8, 1e-5, true);
+      this.decodeNormUniform = this.createUniformBuffer(data);
+    }
+    {
+      const data = new ArrayBuffer(8);
+      const v = new DataView(data);
+      v.setUint32(0, 1, true);
+      v.setUint32(4, this.inDim, true);
+      this.decodeQuantUniform = this.createUniformBuffer(data);
+    }
+    {
+      const data = new ArrayBuffer(12);
+      const v = new DataView(data);
+      v.setUint32(0, this.outDim, true);
+      v.setUint32(4, this.inDim, true);
+      v.setUint32(8, this.kPacked, true);
+      this.decodeGemvParamsUniform = this.createUniformBuffer(data);
+    }
+    this.decodeGemvScaleUniform = this.device.createBuffer({
+      size: 4,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
   }
 
   /**
@@ -117,12 +154,17 @@ export class BitLinear {
       rmsnormWGSL
     );
 
-    const paramsData = new ArrayBuffer(12);
-    const paramsView = new DataView(paramsData);
-    paramsView.setUint32(0, N, true);
-    paramsView.setUint32(4, this.inDim, true);
-    paramsView.setFloat32(8, 1e-5, true);
-    const paramsBuffer = this.createUniformBuffer(paramsData);
+    let paramsBuffer: GPUBuffer;
+    if (N === 1 && this.decodeNormUniform) {
+      paramsBuffer = this.decodeNormUniform;
+    } else {
+      const paramsData = new ArrayBuffer(12);
+      const paramsView = new DataView(paramsData);
+      paramsView.setUint32(0, N, true);
+      paramsView.setUint32(4, this.inDim, true);
+      paramsView.setFloat32(8, 1e-5, true);
+      paramsBuffer = this.createUniformBuffer(paramsData);
+    }
 
     const bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,
@@ -153,11 +195,16 @@ export class BitLinear {
       quantizeWGSL
     );
 
-    const paramsData = new ArrayBuffer(8);
-    const paramsView = new DataView(paramsData);
-    paramsView.setUint32(0, N, true);
-    paramsView.setUint32(4, this.inDim, true);
-    const paramsBuffer = this.createUniformBuffer(paramsData);
+    let paramsBuffer: GPUBuffer;
+    if (N === 1 && this.decodeQuantUniform) {
+      paramsBuffer = this.decodeQuantUniform;
+    } else {
+      const paramsData = new ArrayBuffer(8);
+      const paramsView = new DataView(paramsData);
+      paramsView.setUint32(0, N, true);
+      paramsView.setUint32(4, this.inDim, true);
+      paramsBuffer = this.createUniformBuffer(paramsData);
+    }
 
     const bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,
@@ -187,16 +234,20 @@ export class BitLinear {
       ternaryGemvWGSL
     );
 
-    // Params: M, K, K_packed
-    const paramsData = new ArrayBuffer(12);
-    const paramsView = new DataView(paramsData);
-    paramsView.setUint32(0, this.outDim, true);
-    paramsView.setUint32(4, this.inDim, true);
-    paramsView.setUint32(8, this.kPacked, true);
-    const paramsBuffer = this.createUniformBuffer(paramsData);
-
-    // Input scale: read from first element (single token)
-    const inputScaleBuffer = this.createUniformBuffer(new ArrayBuffer(4));
+    let paramsBuffer: GPUBuffer;
+    let inputScaleBuffer: GPUBuffer;
+    if (this.decodeGemvParamsUniform && this.decodeGemvScaleUniform) {
+      paramsBuffer = this.decodeGemvParamsUniform;
+      inputScaleBuffer = this.decodeGemvScaleUniform;
+    } else {
+      const paramsData = new ArrayBuffer(12);
+      const paramsView = new DataView(paramsData);
+      paramsView.setUint32(0, this.outDim, true);
+      paramsView.setUint32(4, this.inDim, true);
+      paramsView.setUint32(8, this.kPacked, true);
+      paramsBuffer = this.createUniformBuffer(paramsData);
+      inputScaleBuffer = this.createUniformBuffer(new ArrayBuffer(4));
+    }
     // Copy from inputScales[0] to uniform
     encoder.copyBufferToBuffer(inputScales, 0, inputScaleBuffer, 0, 4);
 

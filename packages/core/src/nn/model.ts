@@ -42,6 +42,12 @@ export class BitNetModel {
 
   private kvCaches: KVCache[];
 
+  // Pre-created uniform buffers for N=1 decode
+  private decodeTokenBuffer?: GPUBuffer;
+  private decodeEmbeddingUniform?: GPUBuffer;
+  private decodeFinalNormUniform?: GPUBuffer;
+  private decodeLMHeadUniform?: GPUBuffer;
+
   constructor(
     device: GPUDevice,
     pipelines: PipelineManager,
@@ -218,7 +224,7 @@ export class BitNetModel {
       );
     }
 
-    return new BitNetModel(
+    const model = new BitNetModel(
       device,
       pipelines,
       pool,
@@ -229,6 +235,57 @@ export class BitNetModel {
       lmHead,
       kvCaches
     );
+    model.initDecodeUniforms();
+    return model;
+  }
+
+  /** Pre-create uniform buffers for N=1 decode path. */
+  private initDecodeUniforms(): void {
+    // Token buffer for decode (reused each token via writeBuffer)
+    this.decodeTokenBuffer = this.device.createBuffer({
+      size: 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    // Embedding uniform (static for N=1)
+    {
+      const data = new ArrayBuffer(12);
+      const v = new DataView(data);
+      v.setUint32(0, 1, true);
+      v.setUint32(4, this.config.hiddenSize, true);
+      v.setUint32(8, this.config.vocabSize, true);
+      this.decodeEmbeddingUniform = this.createUniform(data);
+    }
+
+    // Final norm uniform (static for N=1)
+    {
+      const data = new ArrayBuffer(12);
+      const v = new DataView(data);
+      v.setUint32(0, 1, true);
+      v.setUint32(4, this.config.hiddenSize, true);
+      v.setFloat32(8, this.config.rmsNormEps, true);
+      this.decodeFinalNormUniform = this.createUniform(data);
+    }
+
+    // LM head uniform (static for N=1, only for tied embedding path)
+    if (!(this.lmHead instanceof BitLinear)) {
+      const data = new ArrayBuffer(12);
+      const v = new DataView(data);
+      v.setUint32(0, 1, true);
+      v.setUint32(4, this.config.vocabSize, true);
+      v.setUint32(8, this.config.hiddenSize, true);
+      this.decodeLMHeadUniform = this.createUniform(data);
+    }
+
+    // Cascade to all layers
+    for (const layer of this.layers) {
+      layer.initDecodeUniforms();
+    }
+
+    // LM head BitLinear
+    if (this.lmHead instanceof BitLinear) {
+      (this.lmHead as BitLinear).initDecodeUniforms();
+    }
   }
 
   /**
@@ -240,14 +297,22 @@ export class BitNetModel {
     const N = tokenIds.length;
     const encoder = this.device.createCommandEncoder();
 
-    // Upload token IDs
-    const tokenBuffer = this.device.createBuffer({
-      size: tokenIds.byteLength,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: true,
-    });
-    new Uint32Array(tokenBuffer.getMappedRange()).set(tokenIds);
-    tokenBuffer.unmap();
+    // Upload token IDs (reuse pre-allocated buffer for decode N=1)
+    let tokenBuffer: GPUBuffer;
+    if (N === 1 && this.decodeTokenBuffer) {
+      const tokenData = new ArrayBuffer(4);
+      new DataView(tokenData).setUint32(0, tokenIds[0], true);
+      this.device.queue.writeBuffer(this.decodeTokenBuffer, 0, new Uint8Array(tokenData));
+      tokenBuffer = this.decodeTokenBuffer;
+    } else {
+      tokenBuffer = this.device.createBuffer({
+        size: tokenIds.byteLength,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        mappedAtCreation: true,
+      });
+      new Uint32Array(tokenBuffer.getMappedRange()).set(tokenIds);
+      tokenBuffer.unmap();
+    }
 
     // Embedding lookup
     let hidden = this.dispatchEmbedding(encoder, tokenBuffer, N);
@@ -486,12 +551,17 @@ export class BitNetModel {
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
 
-    const paramsData = new ArrayBuffer(12);
-    const v = new DataView(paramsData);
-    v.setUint32(0, N, true);
-    v.setUint32(4, this.config.hiddenSize, true);
-    v.setUint32(8, this.config.vocabSize, true);
-    const paramsBuffer = this.createUniform(paramsData);
+    let paramsBuffer: GPUBuffer;
+    if (N === 1 && this.decodeEmbeddingUniform) {
+      paramsBuffer = this.decodeEmbeddingUniform;
+    } else {
+      const paramsData = new ArrayBuffer(12);
+      const v = new DataView(paramsData);
+      v.setUint32(0, N, true);
+      v.setUint32(4, this.config.hiddenSize, true);
+      v.setUint32(8, this.config.vocabSize, true);
+      paramsBuffer = this.createUniform(paramsData);
+    }
 
     const bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,
@@ -528,12 +598,17 @@ export class BitNetModel {
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
 
-    const paramsData = new ArrayBuffer(12);
-    const v = new DataView(paramsData);
-    v.setUint32(0, N, true);
-    v.setUint32(4, this.config.hiddenSize, true);
-    v.setFloat32(8, this.config.rmsNormEps, true);
-    const paramsBuffer = this.createUniform(paramsData);
+    let paramsBuffer: GPUBuffer;
+    if (N === 1 && this.decodeFinalNormUniform) {
+      paramsBuffer = this.decodeFinalNormUniform;
+    } else {
+      const paramsData = new ArrayBuffer(12);
+      const v = new DataView(paramsData);
+      v.setUint32(0, N, true);
+      v.setUint32(4, this.config.hiddenSize, true);
+      v.setFloat32(8, this.config.rmsNormEps, true);
+      paramsBuffer = this.createUniform(paramsData);
+    }
 
     const bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,
@@ -572,12 +647,17 @@ export class BitNetModel {
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
 
-    const paramsData = new ArrayBuffer(12);
-    const v = new DataView(paramsData);
-    v.setUint32(0, N, true);
-    v.setUint32(4, V, true);
-    v.setUint32(8, D, true);
-    const paramsBuffer = this.createUniform(paramsData);
+    let paramsBuffer: GPUBuffer;
+    if (N === 1 && this.decodeLMHeadUniform) {
+      paramsBuffer = this.decodeLMHeadUniform;
+    } else {
+      const paramsData = new ArrayBuffer(12);
+      const v = new DataView(paramsData);
+      v.setUint32(0, N, true);
+      v.setUint32(4, V, true);
+      v.setUint32(8, D, true);
+      paramsBuffer = this.createUniform(paramsData);
+    }
 
     const bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,

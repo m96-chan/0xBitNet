@@ -28,6 +28,10 @@ export class FFN {
   private downProj: BitLinear;
   private gateProj: BitLinear | null; // null for ReLU² (no gate)
 
+  // Pre-created uniform buffers for N=1 decode (static params)
+  private decodeActivationUniform?: GPUBuffer;
+  private decodeElementwiseUniform?: GPUBuffer;
+
   constructor(
     device: GPUDevice,
     pipelines: PipelineManager,
@@ -44,6 +48,28 @@ export class FFN {
     this.upProj = upProj;
     this.downProj = downProj;
     this.gateProj = gateProj;
+  }
+
+  /** Pre-create uniform buffers for N=1 decode path (all static). */
+  initDecodeUniforms(): void {
+    const activationType = this.config.activation === "relu2" ? 0 : 1;
+    {
+      const data = new ArrayBuffer(8);
+      const v = new DataView(data);
+      v.setUint32(0, this.config.intermediateSize, true);
+      v.setUint32(4, activationType, true);
+      this.decodeActivationUniform = this.createUniform(data);
+    }
+    {
+      const data = new ArrayBuffer(8);
+      const v = new DataView(data);
+      v.setUint32(0, this.config.intermediateSize, true);
+      v.setUint32(4, 1, true); // multiply
+      this.decodeElementwiseUniform = this.createUniform(data);
+    }
+    this.upProj.initDecodeUniforms();
+    this.downProj.initDecodeUniforms();
+    this.gateProj?.initDecodeUniforms();
   }
 
   /**
@@ -80,7 +106,8 @@ export class FFN {
       encoder,
       gate,
       N * this.config.intermediateSize,
-      activationType
+      activationType,
+      N
     );
     this.pool.release(gate);
 
@@ -90,7 +117,8 @@ export class FFN {
       gateActivated,
       up,
       N * this.config.intermediateSize,
-      1 // multiply
+      1, // multiply
+      N
     );
     this.pool.release(gateActivated);
     this.pool.release(up);
@@ -118,7 +146,8 @@ export class FFN {
       encoder,
       up,
       N * this.config.intermediateSize,
-      activationType
+      activationType,
+      N
     );
     this.pool.release(up);
 
@@ -133,7 +162,8 @@ export class FFN {
     encoder: GPUCommandEncoder,
     input: GPUBuffer,
     numElements: number,
-    activationType: number
+    activationType: number,
+    N: number
   ): GPUBuffer {
     const { pipeline, bindGroupLayout } = this.pipelines.getOrCreate(
       `activation_${activationType}`,
@@ -145,11 +175,16 @@ export class FFN {
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
 
-    const paramsData = new ArrayBuffer(8);
-    const v = new DataView(paramsData);
-    v.setUint32(0, numElements, true);
-    v.setUint32(4, activationType, true);
-    const paramsBuffer = this.createUniform(paramsData);
+    let paramsBuffer: GPUBuffer;
+    if (N === 1 && this.decodeActivationUniform) {
+      paramsBuffer = this.decodeActivationUniform;
+    } else {
+      const paramsData = new ArrayBuffer(8);
+      const v = new DataView(paramsData);
+      v.setUint32(0, numElements, true);
+      v.setUint32(4, activationType, true);
+      paramsBuffer = this.createUniform(paramsData);
+    }
 
     const bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,
@@ -174,7 +209,8 @@ export class FFN {
     a: GPUBuffer,
     b: GPUBuffer,
     numElements: number,
-    op: number
+    op: number,
+    N: number
   ): GPUBuffer {
     const { pipeline, bindGroupLayout } = this.pipelines.getOrCreate(
       `elementwise_${op}`,
@@ -186,11 +222,16 @@ export class FFN {
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
 
-    const paramsData = new ArrayBuffer(8);
-    const v = new DataView(paramsData);
-    v.setUint32(0, numElements, true);
-    v.setUint32(4, op, true);
-    const paramsBuffer = this.createUniform(paramsData);
+    let paramsBuffer: GPUBuffer;
+    if (N === 1 && this.decodeElementwiseUniform) {
+      paramsBuffer = this.decodeElementwiseUniform;
+    } else {
+      const paramsData = new ArrayBuffer(8);
+      const v = new DataView(paramsData);
+      v.setUint32(0, numElements, true);
+      v.setUint32(4, op, true);
+      paramsBuffer = this.createUniform(paramsData);
+    }
 
     const bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,

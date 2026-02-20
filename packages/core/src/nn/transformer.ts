@@ -25,6 +25,10 @@ export class TransformerBlock {
   private attention: Attention;
   private ffn: FFN;
 
+  // Pre-created uniform buffers for N=1 decode (static params, shared within block)
+  private decodeNormUniform?: GPUBuffer;
+  private decodeAddUniform?: GPUBuffer;
+
   constructor(
     device: GPUDevice,
     pipelines: PipelineManager,
@@ -43,6 +47,27 @@ export class TransformerBlock {
     this.postAttnLayerNorm = postAttnLayerNorm;
     this.attention = attention;
     this.ffn = ffn;
+  }
+
+  /** Pre-create uniform buffers for N=1 decode path (all static). */
+  initDecodeUniforms(): void {
+    {
+      const data = new ArrayBuffer(12);
+      const v = new DataView(data);
+      v.setUint32(0, 1, true);
+      v.setUint32(4, this.config.hiddenSize, true);
+      v.setFloat32(8, this.config.rmsNormEps, true);
+      this.decodeNormUniform = this.createUniform(data);
+    }
+    {
+      const data = new ArrayBuffer(8);
+      const v = new DataView(data);
+      v.setUint32(0, this.config.hiddenSize, true);
+      v.setUint32(4, 0, true); // add
+      this.decodeAddUniform = this.createUniform(data);
+    }
+    this.attention.initDecodeUniforms();
+    this.ffn.initDecodeUniforms();
   }
 
   /**
@@ -75,7 +100,8 @@ export class TransformerBlock {
       encoder,
       input,
       attnOut,
-      N * hidden
+      N * hidden,
+      N
     );
     this.pool.release(attnOut);
 
@@ -93,7 +119,8 @@ export class TransformerBlock {
       encoder,
       residual1,
       ffnOut,
-      N * hidden
+      N * hidden,
+      N
     );
     this.pool.release(residual1);
     this.pool.release(ffnOut);
@@ -118,12 +145,17 @@ export class TransformerBlock {
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
 
-    const paramsData = new ArrayBuffer(12);
-    const v = new DataView(paramsData);
-    v.setUint32(0, N, true);
-    v.setUint32(4, hidden, true);
-    v.setFloat32(8, this.config.rmsNormEps, true);
-    const paramsBuffer = this.createUniform(paramsData);
+    let paramsBuffer: GPUBuffer;
+    if (N === 1 && this.decodeNormUniform) {
+      paramsBuffer = this.decodeNormUniform;
+    } else {
+      const paramsData = new ArrayBuffer(12);
+      const v = new DataView(paramsData);
+      v.setUint32(0, N, true);
+      v.setUint32(4, hidden, true);
+      v.setFloat32(8, this.config.rmsNormEps, true);
+      paramsBuffer = this.createUniform(paramsData);
+    }
 
     const bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,
@@ -148,7 +180,8 @@ export class TransformerBlock {
     encoder: GPUCommandEncoder,
     a: GPUBuffer,
     b: GPUBuffer,
-    numElements: number
+    numElements: number,
+    N: number
   ): GPUBuffer {
     const { pipeline, bindGroupLayout } = this.pipelines.getOrCreate(
       "elementwise_0",
@@ -160,11 +193,16 @@ export class TransformerBlock {
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
 
-    const paramsData = new ArrayBuffer(8);
-    const v = new DataView(paramsData);
-    v.setUint32(0, numElements, true);
-    v.setUint32(4, 0, true); // add
-    const paramsBuffer = this.createUniform(paramsData);
+    let paramsBuffer: GPUBuffer;
+    if (N === 1 && this.decodeAddUniform) {
+      paramsBuffer = this.decodeAddUniform;
+    } else {
+      const paramsData = new ArrayBuffer(8);
+      const v = new DataView(paramsData);
+      v.setUint32(0, numElements, true);
+      v.setUint32(4, 0, true); // add
+      paramsBuffer = this.createUniform(paramsData);
+    }
 
     const bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,

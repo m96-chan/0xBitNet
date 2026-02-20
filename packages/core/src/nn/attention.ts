@@ -30,6 +30,13 @@ export class Attention {
   private vProj: BitLinear;
   private oProj: BitLinear;
 
+  // Pre-allocated uniform buffers for N=1 decode (dynamic — updated via writeBuffer)
+  private decodeRopeQUniform?: GPUBuffer;
+  private decodeRopeKUniform?: GPUBuffer;
+  private decodeScoresUniform?: GPUBuffer;
+  private decodeSoftmaxUniform?: GPUBuffer;
+  private decodeAttnVUniform?: GPUBuffer;
+
   constructor(
     device: GPUDevice,
     pipelines: PipelineManager,
@@ -49,6 +56,25 @@ export class Attention {
     this.kProj = kProj;
     this.vProj = vProj;
     this.oProj = oProj;
+  }
+
+  /** Pre-allocate uniform buffers for N=1 decode (updated via writeBuffer each token). */
+  initDecodeUniforms(): void {
+    const mkBuf = (size: number) =>
+      this.device.createBuffer({
+        size,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+    this.decodeRopeQUniform = mkBuf(20);
+    this.decodeRopeKUniform = mkBuf(20);
+    this.decodeScoresUniform = mkBuf(24);
+    this.decodeSoftmaxUniform = mkBuf(8);
+    this.decodeAttnVUniform = mkBuf(20);
+
+    this.qProj.initDecodeUniforms();
+    this.kProj.initDecodeUniforms();
+    this.vProj.initDecodeUniforms();
+    this.oProj.initDecodeUniforms();
   }
 
   /**
@@ -78,14 +104,16 @@ export class Attention {
       qBuf,
       N,
       numAttentionHeads,
-      kvCache.seqLen
+      kvCache.seqLen,
+      N === 1 ? this.decodeRopeQUniform : undefined
     );
     const kRoped = this.applyRoPE(
       encoder,
       kBuf,
       N,
       numKeyValueHeads,
-      kvCache.seqLen
+      kvCache.seqLen,
+      N === 1 ? this.decodeRopeKUniform : undefined
     );
 
     this.pool.release(qBuf);
@@ -104,7 +132,8 @@ export class Attention {
       qRoped,
       kvCache.key,
       N,
-      totalSeq
+      totalSeq,
+      N === 1 ? this.decodeScoresUniform : undefined
     );
     this.pool.release(qRoped);
 
@@ -113,7 +142,8 @@ export class Attention {
       encoder,
       scores,
       numAttentionHeads * N,
-      totalSeq
+      totalSeq,
+      N === 1 ? this.decodeSoftmaxUniform : undefined
     );
     this.pool.release(scores);
 
@@ -123,7 +153,8 @@ export class Attention {
       attnWeights,
       kvCache.value,
       N,
-      totalSeq
+      totalSeq,
+      N === 1 ? this.decodeAttnVUniform : undefined
     );
     this.pool.release(attnWeights);
 
@@ -139,7 +170,8 @@ export class Attention {
     input: GPUBuffer,
     N: number,
     numHeads: number,
-    posOffset: number
+    posOffset: number,
+    decodeUniform?: GPUBuffer
   ): GPUBuffer {
     const { pipeline, bindGroupLayout } = this.pipelines.getOrCreate(
       "rope",
@@ -159,7 +191,14 @@ export class Attention {
     paramsView.setUint32(8, this.hDim, true);
     paramsView.setUint32(12, posOffset, true);
     paramsView.setFloat32(16, this.config.ropeTheta, true);
-    const paramsBuffer = this.createUniform(paramsData);
+
+    let paramsBuffer: GPUBuffer;
+    if (decodeUniform) {
+      this.device.queue.writeBuffer(decodeUniform, 0, new Uint8Array(paramsData));
+      paramsBuffer = decodeUniform;
+    } else {
+      paramsBuffer = this.createUniform(paramsData);
+    }
 
     const bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,
@@ -200,7 +239,8 @@ export class Attention {
     Q: GPUBuffer,
     K: GPUBuffer,
     N: number,
-    S: number
+    S: number,
+    decodeUniform?: GPUBuffer
   ): GPUBuffer {
     const { pipeline, bindGroupLayout } = this.pipelines.getOrCreate(
       "attention_scores",
@@ -223,7 +263,14 @@ export class Attention {
     v.setUint32(12, numKeyValueHeads, true);
     v.setUint32(16, this.hDim, true);
     v.setFloat32(20, 1.0 / Math.sqrt(this.hDim), true);
-    const paramsBuffer = this.createUniform(paramsData);
+
+    let paramsBuffer: GPUBuffer;
+    if (decodeUniform) {
+      this.device.queue.writeBuffer(decodeUniform, 0, new Uint8Array(paramsData));
+      paramsBuffer = decodeUniform;
+    } else {
+      paramsBuffer = this.createUniform(paramsData);
+    }
 
     const bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,
@@ -252,7 +299,8 @@ export class Attention {
     encoder: GPUCommandEncoder,
     input: GPUBuffer,
     N: number,
-    D: number
+    D: number,
+    decodeUniform?: GPUBuffer
   ): GPUBuffer {
     const { pipeline, bindGroupLayout } = this.pipelines.getOrCreate(
       "softmax",
@@ -268,7 +316,14 @@ export class Attention {
     const v = new DataView(paramsData);
     v.setUint32(0, N, true);
     v.setUint32(4, D, true);
-    const paramsBuffer = this.createUniform(paramsData);
+
+    let paramsBuffer: GPUBuffer;
+    if (decodeUniform) {
+      this.device.queue.writeBuffer(decodeUniform, 0, new Uint8Array(paramsData));
+      paramsBuffer = decodeUniform;
+    } else {
+      paramsBuffer = this.createUniform(paramsData);
+    }
 
     const bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,
@@ -293,7 +348,8 @@ export class Attention {
     attn: GPUBuffer,
     V: GPUBuffer,
     N: number,
-    S: number
+    S: number,
+    decodeUniform?: GPUBuffer
   ): GPUBuffer {
     const { pipeline, bindGroupLayout } = this.pipelines.getOrCreate(
       "attn_v",
@@ -315,7 +371,14 @@ export class Attention {
     v.setUint32(8, numAttentionHeads, true);
     v.setUint32(12, numKeyValueHeads, true);
     v.setUint32(16, this.hDim, true);
-    const paramsBuffer = this.createUniform(paramsData);
+
+    let paramsBuffer: GPUBuffer;
+    if (decodeUniform) {
+      this.device.queue.writeBuffer(decodeUniform, 0, new Uint8Array(paramsData));
+      paramsBuffer = decodeUniform;
+    } else {
+      paramsBuffer = this.createUniform(paramsData);
+    }
 
     const bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,

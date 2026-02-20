@@ -37,7 +37,6 @@ import { initGPU } from "./gpu/device.js";
 import { loadModel } from "./model/loader.js";
 import { BitNetModel } from "./nn/model.js";
 import { Tokenizer } from "./tokenizer/tokenizer.js";
-import { GGUFParser } from "./model/gguf.js";
 
 /**
  * High-level API for BitNet inference in the browser.
@@ -59,6 +58,8 @@ export class BitNet {
   private model: BitNetModel;
   private tokenizer: Tokenizer;
   private device: GPUDevice;
+  private readbackBuffer: GPUBuffer;
+  private logitsArray: Float32Array;
 
   private constructor(
     model: BitNetModel,
@@ -68,6 +69,12 @@ export class BitNet {
     this.model = model;
     this.tokenizer = tokenizer;
     this.device = device;
+    const vocabSize = model.config.vocabSize;
+    this.readbackBuffer = device.createBuffer({
+      size: vocabSize * 4,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+    this.logitsArray = new Float32Array(vocabSize);
   }
 
   /**
@@ -88,19 +95,12 @@ export class BitNet {
 
     const model = BitNetModel.build(gpu.device, result.config, result.weights);
 
-    // Extract tokenizer from GGUF if possible
+    // Extract tokenizer from GGUF metadata or fetch tokenizer.json
     let tokenizer: Tokenizer;
     const url = typeof source === "string" ? source : source.href;
-    if (url.endsWith(".gguf")) {
-      // Re-parse just the header for tokenizer metadata
-      const response = await fetch(url);
-      const buffer = await response.arrayBuffer();
-      const parser = new GGUFParser(buffer);
-      const gguf = parser.parse();
-      tokenizer = Tokenizer.fromGGUFMetadata(
-        gguf.metadata as Record<string, unknown>
-      );
-    } else {
+    if (url.endsWith(".gguf") && result.metadata) {
+      tokenizer = Tokenizer.fromGGUFMetadata(result.metadata);
+    } else if (!url.endsWith(".gguf")) {
       // For safetensors, tokenizer must be loaded separately
       // Try to fetch tokenizer.json from the same directory
       const baseUrl = url.substring(0, url.lastIndexOf("/"));
@@ -115,6 +115,10 @@ export class BitNet {
             "provide a tokenizer.json in the same directory."
         );
       }
+    } else {
+      throw new Error(
+        "Could not extract tokenizer metadata from GGUF file."
+      );
     }
 
     return new BitNet(model, tokenizer, gpu.device);
@@ -163,6 +167,7 @@ export class BitNet {
 
   /** Release all GPU resources. */
   dispose(): void {
+    this.readbackBuffer.destroy();
     this.model.dispose();
   }
 
@@ -182,66 +187,89 @@ export class BitNet {
   ): Promise<number> {
     const vocabSize = this.model.config.vocabSize;
 
-    const readBuffer = this.device.createBuffer({
-      size: vocabSize * 4,
-      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-    });
-
     const encoder = this.device.createCommandEncoder();
-    // model.forward() now always returns [1, V] logits (last token only)
     encoder.copyBufferToBuffer(
       logitsBuffer,
       0,
-      readBuffer,
+      this.readbackBuffer,
       0,
       vocabSize * 4
     );
     this.device.queue.submit([encoder.finish()]);
 
-    await readBuffer.mapAsync(GPUMapMode.READ);
-    const logits = new Float32Array(
-      readBuffer.getMappedRange().slice(0)
-    );
-    readBuffer.unmap();
-    readBuffer.destroy();
+    await this.readbackBuffer.mapAsync(GPUMapMode.READ);
+    const mapped = new Float32Array(this.readbackBuffer.getMappedRange());
+    const logits = this.logitsArray;
+    logits.set(mapped);
+    this.readbackBuffer.unmap();
 
     // Temperature
     if (temperature !== 1.0) {
       const invTemp = 1.0 / temperature;
-      for (let i = 0; i < logits.length; i++) {
+      for (let i = 0; i < vocabSize; i++) {
         logits[i] *= invTemp;
       }
     }
 
-    // Top-K
+    // Top-K via min-heap (O(V) instead of O(V log V) sort)
     if (topK > 0 && topK < vocabSize) {
-      const indices = Array.from({ length: vocabSize }, (_, i) => i);
-      indices.sort((a, b) => logits[b] - logits[a]);
-      const threshold = logits[indices[topK - 1]];
-      for (let i = 0; i < vocabSize; i++) {
-        if (logits[i] < threshold) {
-          logits[i] = -Infinity;
+      const heap = new Uint32Array(topK);
+      for (let i = 0; i < topK; i++) heap[i] = i;
+      // Build initial min-heap
+      for (let i = (topK >> 1) - 1; i >= 0; i--) {
+        siftDown(heap, i, topK, logits);
+      }
+      // Process remaining elements
+      for (let i = topK; i < vocabSize; i++) {
+        if (logits[i] > logits[heap[0]]) {
+          heap[0] = i;
+          siftDown(heap, 0, topK, logits);
         }
+      }
+      const threshold = logits[heap[0]];
+      for (let i = 0; i < vocabSize; i++) {
+        if (logits[i] < threshold) logits[i] = -Infinity;
       }
     }
 
     // Softmax + sample
     let maxVal = -Infinity;
-    for (const v of logits) {
-      if (v > maxVal) maxVal = v;
+    for (let i = 0; i < vocabSize; i++) {
+      if (logits[i] > maxVal) maxVal = logits[i];
     }
     let sum = 0;
-    for (let i = 0; i < logits.length; i++) {
+    for (let i = 0; i < vocabSize; i++) {
       logits[i] = Math.exp(logits[i] - maxVal);
       sum += logits[i];
     }
 
     const r = Math.random() * sum;
     let cumsum = 0;
-    for (let i = 0; i < logits.length; i++) {
+    for (let i = 0; i < vocabSize; i++) {
       cumsum += logits[i];
       if (cumsum >= r) return i;
     }
-    return logits.length - 1;
+    return vocabSize - 1;
+  }
+}
+
+/** Min-heap sift-down for top-K selection */
+function siftDown(
+  heap: Uint32Array,
+  i: number,
+  n: number,
+  values: Float32Array
+): void {
+  while (true) {
+    let min = i;
+    const l = 2 * i + 1;
+    const r = 2 * i + 2;
+    if (l < n && values[heap[l]] < values[heap[min]]) min = l;
+    if (r < n && values[heap[r]] < values[heap[min]]) min = r;
+    if (min === i) break;
+    const tmp = heap[i];
+    heap[i] = heap[min];
+    heap[min] = tmp;
+    i = min;
   }
 }
