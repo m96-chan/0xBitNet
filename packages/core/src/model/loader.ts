@@ -71,6 +71,8 @@ async function loadGGUF(
   const hasOutputWeight = gguf.tensors.some((t) => t.name === "output.weight");
   config.tieWordEmbeddings = !hasOutputWeight;
 
+  console.debug(`[0xBitNet] config: arch=${gguf.metadata["general.architecture"]}, heads=${config.numAttentionHeads}, kv_heads=${config.numKeyValueHeads}, head_dim=${config.hiddenSize / config.numAttentionHeads}, hidden=${config.hiddenSize}, intermediate=${config.intermediateSize}, layers=${config.numHiddenLayers}, tied=${config.tieWordEmbeddings}`);
+
   const store = new WeightStore(device);
   const maxBinding = device.limits.maxStorageBufferBindingSize;
   const totalTensors = gguf.tensors.length;
@@ -282,15 +284,18 @@ function configFromGGUFMetadata(
     (metadata["general.architecture"] as string) ?? "bitnet";
 
   // Try architecture-prefixed keys, then common fallbacks
+  // The BitNet 2B-4T GGUF uses arch "bitnet-25"
   function get(suffix: string): unknown {
     return metadata[`${arch}.${suffix}`]
       ?? metadata[`llama.${suffix}`]
-      ?? metadata[`bitnet.${suffix}`];
+      ?? metadata[`bitnet.${suffix}`]
+      ?? metadata[`bitnet-25.${suffix}`];
   }
 
   const hiddenSize = (get("embedding_length") as number) ?? 2560;
   const numLayers = (get("block_count") as number) ?? 30;
-  const numHeads = (get("attention.head_count") as number) ?? 32;
+  // 2B-4T: 20 heads, 5 KV heads, head_dim=128 (NOT 32/8/80!)
+  const numHeads = (get("attention.head_count") as number) ?? 20;
   const numKVHeads = (get("attention.head_count_kv") as number) ?? numHeads;
   const vocabSize =
     (get("vocab_size") as number) ??

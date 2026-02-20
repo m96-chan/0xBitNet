@@ -7,12 +7,12 @@ export const BITNET_2B_4T_CONFIG: ModelConfig = {
   hiddenSize: 2560,
   intermediateSize: 6912,
   numHiddenLayers: 30,
-  numAttentionHeads: 32,
-  numKeyValueHeads: 8,
+  numAttentionHeads: 20,
+  numKeyValueHeads: 5,
   maxPositionEmbeddings: 4096,
   rmsNormEps: 1e-5,
   ropeTheta: 500000.0,
-  tieWordEmbeddings: false,
+  tieWordEmbeddings: true,
   activation: "relu2",
 };
 
