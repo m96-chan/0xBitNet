@@ -6,6 +6,7 @@ build-backend = "maturin"
 name = "oxbitnet"
 version = "0.3.0"
 description = "Run BitNet b1.58 ternary LLMs with wgpu"
+readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 classifiers = [

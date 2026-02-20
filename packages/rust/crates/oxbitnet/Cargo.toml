@@ -4,6 +4,7 @@ version = "0.3.0"
 edition = "2021"
 description = "Run BitNet b1.58 ternary LLMs with wgpu"
 license = "MIT"
+readme = "README.md"
 repository = "https://github.com/m96-chan/0xBitNet"
 
 [dependencies]
