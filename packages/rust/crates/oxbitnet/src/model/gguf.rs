@@ -148,7 +148,7 @@ impl<'a> GgufParser<'a> {
             return Err(BitNetError::InvalidGgufMagic(magic));
         }
         let version = self.read_u32()?;
-        if version < 2 || version > 3 {
+        if !(2..=3).contains(&version) {
             return Err(BitNetError::UnsupportedGgufVersion(version));
         }
         let tensor_count = self.read_u64()?;
@@ -187,7 +187,7 @@ impl<'a> GgufParser<'a> {
             .get("general.alignment")
             .and_then(|v| v.as_u32())
             .unwrap_or(32) as usize;
-        let tensor_data_offset = ((self.offset + alignment - 1) / alignment) * alignment;
+        let tensor_data_offset = self.offset.div_ceil(alignment) * alignment;
 
         Ok(GgufFile {
             version,

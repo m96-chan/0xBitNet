@@ -118,11 +118,12 @@ impl Attention {
         let attn_output = self.compute_attn_v(encoder, &attn_weights, &kv_cache.value, n, total_seq, pipelines, pool);
 
         // Output projection
-        let output = self.o_proj.forward(&attn_output, n, encoder, pipelines, pool);
+        
 
-        output
+        self.o_proj.forward(&attn_output, n, encoder, pipelines, pool)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn apply_rope(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -162,7 +163,7 @@ impl Attention {
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&entry.pipeline);
         pass.set_bind_group(0, Some(&bg), &[]);
-        pass.dispatch_workgroups((total_pairs + 255) / 256, 1, 1);
+        pass.dispatch_workgroups(total_pairs.div_ceil(256), 1, 1);
 
         output
     }
@@ -182,6 +183,7 @@ impl Attention {
         encoder.copy_buffer_to_buffer(v, 0, &cache.value, offset, kv_size);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn compute_scores(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -228,8 +230,8 @@ impl Attention {
         pass.set_pipeline(&entry.pipeline);
         pass.set_bind_group(0, Some(&bg), &[]);
         pass.dispatch_workgroups(
-            ((n + 15) / 16) as u32,
-            ((s + 15) / 16) as u32,
+            n.div_ceil(16) as u32,
+            s.div_ceil(16) as u32,
             num_heads as u32,
         );
 
@@ -277,6 +279,7 @@ impl Attention {
         output
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn compute_attn_v(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -319,7 +322,7 @@ impl Attention {
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&entry.pipeline);
         pass.set_bind_group(0, Some(&bg), &[]);
-        pass.dispatch_workgroups((total + 255) / 256, 1, 1);
+        pass.dispatch_workgroups(total.div_ceil(256), 1, 1);
 
         output
     }

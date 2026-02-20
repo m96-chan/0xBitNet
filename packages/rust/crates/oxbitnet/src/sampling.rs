@@ -50,11 +50,12 @@ pub fn sample_token(
         }
 
         let threshold = logits[heap[0]];
-        for i in 0..vocab_size {
-            if logits[i] < threshold {
-                logits[i] = f32::NEG_INFINITY;
+        for logit in logits.iter_mut().take(vocab_size) {
+            if *logit < threshold {
+                *logit = f32::NEG_INFINITY;
             }
         }
+
     }
 
     // Softmax + sample

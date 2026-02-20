@@ -75,8 +75,8 @@ impl FFN {
 
         let gated = self.apply_elementwise(encoder, &gate_activated, &up, num_elements, 1, pipelines, pool);
 
-        let output = self.down_proj.forward(&gated, n, encoder, pipelines, pool);
-        output
+        
+        self.down_proj.forward(&gated, n, encoder, pipelines, pool)
     }
 
     fn forward_simple(
@@ -93,8 +93,8 @@ impl FFN {
         let num_elements = n * self.config.intermediate_size;
         let activated = self.apply_activation(encoder, &up, num_elements, act_type, pipelines, pool);
 
-        let output = self.down_proj.forward(&activated, n, encoder, pipelines, pool);
-        output
+        
+        self.down_proj.forward(&activated, n, encoder, pipelines, pool)
     }
 
     fn apply_activation(
@@ -134,11 +134,12 @@ impl FFN {
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&entry.pipeline);
         pass.set_bind_group(0, Some(&bg), &[]);
-        pass.dispatch_workgroups(((num_elements + 255) / 256) as u32, 1, 1);
+        pass.dispatch_workgroups(num_elements.div_ceil(256) as u32, 1, 1);
 
         output
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn apply_elementwise(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -178,7 +179,7 @@ impl FFN {
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&entry.pipeline);
         pass.set_bind_group(0, Some(&bg), &[]);
-        pass.dispatch_workgroups(((num_elements + 255) / 256) as u32, 1, 1);
+        pass.dispatch_workgroups(num_elements.div_ceil(256) as u32, 1, 1);
 
         output
     }

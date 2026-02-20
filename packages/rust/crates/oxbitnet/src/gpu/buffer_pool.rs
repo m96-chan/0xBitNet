@@ -20,7 +20,7 @@ impl BufferPool {
     }
 
     fn align_size(&self, size: u64) -> u64 {
-        ((size + self.alignment - 1) / self.alignment) * self.alignment
+        size.div_ceil(self.alignment) * self.alignment
     }
 
     /// Create a buffer of at least `size` bytes with the given usage flags.

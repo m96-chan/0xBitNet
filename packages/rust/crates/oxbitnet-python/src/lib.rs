@@ -44,6 +44,7 @@ impl BitNet {
 
     /// Generate text with streaming via callback (raw prompt, no chat template).
     /// Returns total number of tokens generated.
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(
         name = "generate",
         signature = (prompt, on_token, max_tokens=256, temperature=1.0, top_k=50, repeat_penalty=1.1)
@@ -85,6 +86,7 @@ impl BitNet {
     ///
     /// messages: list of dicts with "role" and "content" keys.
     /// Returns total number of tokens generated.
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(
         name = "chat",
         signature = (messages, on_token, max_tokens=256, temperature=1.0, top_k=50, repeat_penalty=1.1)

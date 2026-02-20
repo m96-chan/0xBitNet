@@ -69,9 +69,9 @@ impl TransformerBlock {
         let normed_ffn = self.dispatch_rmsnorm(encoder, &residual1, &self.post_attn_layer_norm.clone(), n, pipelines, pool);
         let ffn_out = self.ffn.forward(&normed_ffn, n, encoder, pipelines, pool);
 
-        let output = self.dispatch_add(encoder, &residual1, &ffn_out, n * hidden, pipelines, pool);
+        
 
-        output
+        self.dispatch_add(encoder, &residual1, &ffn_out, n * hidden, pipelines, pool)
     }
 
     fn dispatch_rmsnorm(
@@ -154,7 +154,7 @@ impl TransformerBlock {
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&entry.pipeline);
         pass.set_bind_group(0, Some(&bg), &[]);
-        pass.dispatch_workgroups(((num_elements + 255) / 256) as u32, 1, 1);
+        pass.dispatch_workgroups(num_elements.div_ceil(256) as u32, 1, 1);
 
         output
     }

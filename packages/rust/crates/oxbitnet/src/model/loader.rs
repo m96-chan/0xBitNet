@@ -27,19 +27,12 @@ pub struct LoadProgress {
     pub fraction: f64,
 }
 
+#[derive(Default)]
 pub struct LoadOptions {
     pub on_progress: Option<Box<dyn Fn(LoadProgress) + Send>>,
     pub cache_dir: Option<PathBuf>,
 }
 
-impl Default for LoadOptions {
-    fn default() -> Self {
-        Self {
-            on_progress: None,
-            cache_dir: None,
-        }
-    }
-}
 
 pub struct LoadResult {
     pub config: ModelConfig,
@@ -114,7 +107,7 @@ fn load_gguf(
 
         let num_elements: u64 = tensor.shape.iter().product();
         let byte_size = if tensor.tensor_type == GGML_TYPE_I2_S {
-            ((num_elements + 3) / 4) as usize + 32
+            num_elements.div_ceil(4) as usize + 32
         } else {
             let elem_size = gguf::ggml_type_size(tensor.tensor_type)?;
             (num_elements as f64 * elem_size).ceil() as usize
@@ -129,7 +122,7 @@ fn load_gguf(
         );
 
         if tensor.tensor_type == GGML_TYPE_I2_S {
-            let packed_bytes = ((num_elements + 3) / 4) as usize;
+            let packed_bytes = num_elements.div_ceil(4) as usize;
             let weight_data = &tensor_data[..packed_bytes];
             store.upload_sharded(&hf_name, weight_data, max_binding);
 
@@ -139,7 +132,7 @@ fn load_gguf(
             let out_dim = tensor.shape.get(1).copied().unwrap_or(1) as usize;
             let scale_name = hf_name.replace(".weight", ".weight_scale");
             let scale_data: Vec<u8> = std::iter::repeat_n(tensor_scale.to_le_bytes(), out_dim)
-                .flat_map(|b| b)
+                .flatten()
                 .collect();
             store.upload(&scale_name, &scale_data);
         } else if tensor.tensor_type == GGML_TYPE_F16 {
@@ -329,7 +322,7 @@ fn create_dummy_scales(store: &mut WeightStore, config: &ModelConfig) {
         for (name, dim) in entries {
             if !store.has(&name) {
                 let data: Vec<u8> = std::iter::repeat_n(1.0f32.to_le_bytes(), dim)
-                    .flat_map(|b| b)
+                    .flatten()
                     .collect();
                 store.upload(&name, &data);
             }
@@ -339,7 +332,7 @@ fn create_dummy_scales(store: &mut WeightStore, config: &ModelConfig) {
     let lm_head_scale = "lm_head.weight_scale".to_string();
     if !store.has(&lm_head_scale) {
         let data: Vec<u8> = std::iter::repeat_n(1.0f32.to_le_bytes(), config.vocab_size)
-            .flat_map(|b| b)
+            .flatten()
             .collect();
         store.upload(&lm_head_scale, &data);
     }

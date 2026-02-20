@@ -9,6 +9,12 @@ pub struct BgCache {
     entries: HashMap<String, wgpu::BindGroup>,
 }
 
+impl Default for BgCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BgCache {
     pub fn new() -> Self {
         Self {

@@ -334,7 +334,7 @@ impl BitNetModel {
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&entry.pipeline);
         pass.set_bind_group(0, Some(&bg), &[]);
-        pass.dispatch_workgroups((total + 255) / 256, 1, 1);
+        pass.dispatch_workgroups(total.div_ceil(256), 1, 1);
 
         output
     }
@@ -414,7 +414,7 @@ impl BitNetModel {
 
         let total = (n * v) as u32;
         let wg_x = total.min(65535);
-        let wg_y = (total + 65534) / 65535;
+        let wg_y = total.div_ceil(65535);
 
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&entry.pipeline);

@@ -43,7 +43,7 @@ impl BitLinear {
             norm_weight,
             in_dim,
             out_dim,
-            k_packed: (in_dim + 15) / 16,
+            k_packed: in_dim.div_ceil(16),
             bg_cache: BgCache::new(),
         }
     }
@@ -237,8 +237,8 @@ impl BitLinear {
             ],
         });
 
-        let wg_m = ((self.out_dim + 63) / 64) as u32;
-        let wg_n = ((n + 63) / 64) as u32;
+        let wg_m = self.out_dim.div_ceil(64) as u32;
+        let wg_n = n.div_ceil(64) as u32;
 
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&entry.pipeline);
@@ -261,7 +261,7 @@ pub(crate) fn buf_entry(binding: u32, buffer: &wgpu::Buffer) -> wgpu::BindGroupE
 }
 
 pub(crate) fn create_uniform_raw(device: &wgpu::Device, data: &[u8]) -> wgpu::Buffer {
-    let size = ((data.len().max(4) + 3) / 4 * 4) as u64;
+    let size = (data.len().max(4).div_ceil(4) * 4) as u64;
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
         size,
