@@ -18,9 +18,28 @@ typedef enum OxBitNetLoadPhase {
 } OxBitNetLoadPhase;
 
 /**
+ * Log level for the logger callback.
+ */
+typedef enum OxBitNetLogLevel {
+  Trace = 0,
+  Debug = 1,
+  Info = 2,
+  Warn = 3,
+  Error = 4,
+} OxBitNetLogLevel;
+
+/**
  * Opaque handle to a loaded BitNet model.
  */
 typedef struct OxBitNet OxBitNet;
+
+/**
+ * Logger callback type.
+ */
+typedef void (*OxBitNetLogFn)(enum OxBitNetLogLevel level,
+                              const char *message,
+                              uintptr_t len,
+                              void *userdata);
 
 /**
  * Options for text generation.
@@ -99,6 +118,21 @@ typedef struct OxBitNetChatMessage {
    */
   const char *content;
 } OxBitNetChatMessage;
+
+/**
+ * Install a logger callback that receives all internal log messages.
+ *
+ * Must be called before `oxbitnet_load`. Can only be called once; subsequent
+ * calls are no-ops. Pass `min_level` to filter: 0=Trace, 1=Debug, 2=Info,
+ * 3=Warn, 4=Error.
+ *
+ * # Safety
+ *
+ * - `callback` must be a valid function pointer safe to call from any thread.
+ * - `userdata` must remain valid for the lifetime of the process (or until no
+ *   more log messages will be emitted).
+ */
+void oxbitnet_set_logger(OxBitNetLogFn callback, void *userdata, uint8_t min_level);
 
 /**
  * Return default generation options.

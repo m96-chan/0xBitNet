@@ -12,6 +12,15 @@
 #include <stdio.h>
 #include "../oxbitnet.h"
 
+/* Logger callback — receives all internal log messages */
+static void on_log(OxBitNetLogLevel level, const char *message, uintptr_t len,
+                   void *userdata) {
+    (void)userdata;
+    const char *labels[] = {"TRACE", "DEBUG", "INFO", "WARN", "ERROR"};
+    const char *label = (level <= 4) ? labels[level] : "?";
+    fprintf(stderr, "[%s] %.*s\n", label, (int)len, message);
+}
+
 /* Progress callback */
 static void on_progress(const OxBitNetLoadProgress *p, void *userdata) {
     (void)userdata;
@@ -39,18 +48,19 @@ int main(int argc, char **argv) {
     const char *source = argv[1];
     const char *user_prompt = argv[2];
 
+    /* Install logger (must be called before oxbitnet_load) */
+    oxbitnet_set_logger(on_log, NULL, 2 /* Info */);
+
     /* Load model */
     OxBitNetLoadOptions load_opts = oxbitnet_default_load_options();
     load_opts.on_progress = on_progress;
 
-    fprintf(stderr, "Loading %s ...\n", source);
     OxBitNet *model = oxbitnet_load(source, &load_opts);
     if (!model) {
         const char *err = oxbitnet_error_message();
         fprintf(stderr, "Error: %s\n", err ? err : "unknown error");
         return 1;
     }
-    fprintf(stderr, "Model loaded.\n");
 
     /* Build chat messages */
     OxBitNetChatMessage messages[] = {

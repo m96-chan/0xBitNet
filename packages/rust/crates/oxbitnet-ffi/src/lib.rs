@@ -9,6 +9,8 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::path::PathBuf;
 use std::ptr;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::OnceLock;
 
 use futures::StreamExt;
 
@@ -105,6 +107,134 @@ pub struct OxBitNetChatMessage {
     pub role: *const c_char,
     /// Content string, null-terminated UTF-8.
     pub content: *const c_char,
+}
+
+// ---------------------------------------------------------------------------
+// Logger
+// ---------------------------------------------------------------------------
+
+/// Log level for the logger callback.
+#[repr(C)]
+pub enum OxBitNetLogLevel {
+    Trace = 0,
+    Debug = 1,
+    Info = 2,
+    Warn = 3,
+    Error = 4,
+}
+
+/// Logger callback type.
+pub type OxBitNetLogFn = unsafe extern "C" fn(
+    level: OxBitNetLogLevel,
+    message: *const c_char,
+    len: usize,
+    userdata: *mut std::ffi::c_void,
+);
+
+struct LoggerState {
+    callback: OxBitNetLogFn,
+    userdata: usize, // stored as usize for Send+Sync
+}
+
+// Safety: the caller guarantees the userdata pointer (and callback) are safe
+// to call from any thread.
+unsafe impl Send for LoggerState {}
+unsafe impl Sync for LoggerState {}
+
+static LOGGER: OnceLock<LoggerState> = OnceLock::new();
+static MIN_LOG_LEVEL: AtomicU8 = AtomicU8::new(2); // default: Info
+
+/// A tracing layer that forwards events to the C logger callback.
+struct FfiLayer;
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for FfiLayer {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        let Some(state) = LOGGER.get() else {
+            return;
+        };
+
+        let (level, c_level) = match *event.metadata().level() {
+            tracing::Level::TRACE => (0u8, OxBitNetLogLevel::Trace),
+            tracing::Level::DEBUG => (1, OxBitNetLogLevel::Debug),
+            tracing::Level::INFO => (2, OxBitNetLogLevel::Info),
+            tracing::Level::WARN => (3, OxBitNetLogLevel::Warn),
+            tracing::Level::ERROR => (4, OxBitNetLogLevel::Error),
+        };
+
+        if level < MIN_LOG_LEVEL.load(Ordering::Relaxed) {
+            return;
+        }
+
+        // Format the event message
+        let mut buf = String::new();
+        let mut visitor = MessageVisitor(&mut buf);
+        event.record(&mut visitor);
+
+        if let Ok(c_str) = CString::new(buf) {
+            let len = c_str.as_bytes().len();
+            unsafe {
+                (state.callback)(
+                    c_level,
+                    c_str.as_ptr(),
+                    len,
+                    state.userdata as *mut std::ffi::c_void,
+                );
+            }
+        }
+    }
+}
+
+struct MessageVisitor<'a>(&'a mut String);
+
+impl tracing::field::Visit for MessageVisitor<'_> {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        use std::fmt::Write;
+        if field.name() == "message" {
+            let _ = write!(self.0, "{:?}", value);
+        } else {
+            if !self.0.is_empty() {
+                self.0.push(' ');
+            }
+            let _ = write!(self.0, "{}={:?}", field.name(), value);
+        }
+    }
+}
+
+/// Install a logger callback that receives all internal log messages.
+///
+/// Must be called before `oxbitnet_load`. Can only be called once; subsequent
+/// calls are no-ops. Pass `min_level` to filter: 0=Trace, 1=Debug, 2=Info,
+/// 3=Warn, 4=Error.
+///
+/// # Safety
+///
+/// - `callback` must be a valid function pointer safe to call from any thread.
+/// - `userdata` must remain valid for the lifetime of the process (or until no
+///   more log messages will be emitted).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn oxbitnet_set_logger(
+    callback: OxBitNetLogFn,
+    userdata: *mut std::ffi::c_void,
+    min_level: u8,
+) {
+    MIN_LOG_LEVEL.store(min_level.min(4), Ordering::Relaxed);
+
+    if LOGGER
+        .set(LoggerState {
+            callback,
+            userdata: userdata as usize,
+        })
+        .is_ok()
+    {
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+
+        let _ = tracing_subscriber::registry().with(FfiLayer).try_init();
+    }
 }
 
 // ---------------------------------------------------------------------------

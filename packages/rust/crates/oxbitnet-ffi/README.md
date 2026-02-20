@@ -62,6 +62,7 @@ LD_LIBRARY_PATH=../../target/release ./chat
 | `oxbitnet_generate(model, prompt, opts, cb, ud)` | Generate from raw prompt with streaming callback |
 | `oxbitnet_chat(model, msgs, n, opts, cb, ud)` | Generate from chat messages with streaming callback |
 | `oxbitnet_error_message()` | Get last error message (thread-local, NULL if none) |
+| `oxbitnet_set_logger(cb, ud, level)` | Install a logger callback (call before `oxbitnet_load`) |
 | `oxbitnet_default_generate_options()` | Get default generation options |
 | `oxbitnet_default_load_options()` | Get default load options |
 
@@ -82,6 +83,14 @@ Return 0 to continue generation, non-zero to stop early.
 | `top_k` | 50 | Top-k sampling |
 | `repeat_penalty` | 1.1 | Repetition penalty |
 | `repeat_last_n` | 64 | Window size for repetition penalty |
+
+### Logger
+
+```c
+oxbitnet_set_logger(my_log_fn, NULL, 2 /* Info */);
+```
+
+Level values: 0=Trace, 1=Debug, 2=Info, 3=Warn, 4=Error. Must be called once before `oxbitnet_load`. Routes all internal `tracing` output through the callback.
 
 ### Thread Safety
 

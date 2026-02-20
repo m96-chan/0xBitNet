@@ -1694,6 +1694,8 @@ dependencies = [
  "futures",
  "oxbitnet",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
