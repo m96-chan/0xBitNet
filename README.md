@@ -42,7 +42,7 @@ npm install 0xbitnet
 import { BitNet } from "0xbitnet";
 
 const model = await BitNet.load(
-  "https://huggingface.co/m96-chan/bitnet-b1.58-2B-4T-gguf/resolve/main/bitnet-b1.58-2B-4T.gguf",
+  "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf",
   { onProgress: (p) => console.log(`${p.phase}: ${(p.fraction * 100).toFixed(1)}%`) }
 );
 
@@ -81,13 +81,11 @@ await deleteCachedModel("https://example.com/model.gguf");
 
 ## Supported Models
 
-| Model | Config | Parameters | VRAM |
-|-------|--------|------------|------|
-| [microsoft/bitnet-b1.58-2B-4T](https://huggingface.co/microsoft/BitNet-b1.58-2B-4T) | `BITNET_2B_4T_CONFIG` | 2B | ~1.5 GB |
-| [1bitLLM/bitnet_b1_58-large](https://huggingface.co/1bitLLM/bitnet_b1_58-large) | `BITNET_0_7B_CONFIG` | 0.7B | ~0.5 GB |
+| Model | GGUF | Parameters | VRAM |
+|-------|------|------------|------|
+| [BitNet b1.58 2B-4T](https://huggingface.co/microsoft/BitNet-b1.58-2B-4T) | [ggml-model-i2_s.gguf](https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf) | 2B | ~1.5 GB |
 
-
-Third-party models using the I2_S ternary format (e.g., Falcon-Edge 1B/3B, Aramis-2B) are auto-detected from GGUF metadata. See [Model Compatibility](docs/model-compatibility.md) for details.
+More models are planned — see [#1](https://github.com/m96-chan/0xBitNet/issues/1) and [Model Compatibility](docs/model-compatibility.md) for GGUF requirements.
 
 ## API Overview
 

@@ -2,22 +2,11 @@
 
 ## Tested Models
 
-These models have predefined configs in 0xBitNet and have been verified to work:
+| Model | GGUF | Params | Activation | Tied Embeddings |
+|-------|------|--------|------------|-----------------|
+| [BitNet b1.58 2B-4T](https://huggingface.co/microsoft/BitNet-b1.58-2B-4T) | [ggml-model-i2_s.gguf](https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf) | 2B | ReLU² | Yes |
 
-| Model | HuggingFace | Config | Params | Activation | Tied Embeddings |
-|-------|-------------|--------|--------|------------|-----------------|
-| BitNet b1.58 2B-4T | [microsoft/BitNet-b1.58-2B-4T](https://huggingface.co/microsoft/BitNet-b1.58-2B-4T) | `BITNET_2B_4T_CONFIG` | 2B | ReLU² | Yes |
-| BitNet b1.58 Large | [1bitLLM/bitnet_b1_58-large](https://huggingface.co/1bitLLM/bitnet_b1_58-large) | `BITNET_0_7B_CONFIG` | 0.7B | SiLU | No |
-
-
-## Third-Party Models
-
-Models converted to GGUF using the [Eddie-Wang1120/llama.cpp](https://github.com/Eddie-Wang1120/llama.cpp) BitNet fork should work if they meet the GGUF requirements below. Known compatible third-party models include:
-
-- **Falcon3-Edge 1B/3B** — BitNet-quantized Falcon models
-- **Aramis-2B** — BitNet-quantized community model
-
-These models are auto-detected from GGUF metadata — no predefined config is needed.
+Other BitNet-architecture models (e.g., bitnet_b1_58-large, Falcon3-Edge, Aramis-2B) may work via GGUF auto-detection but are not yet verified. See [#1](https://github.com/m96-chan/0xBitNet/issues/1) for progress on additional model support.
 
 ## GGUF Requirements
 

@@ -8,8 +8,7 @@
 
 | Model | Parameters | Approximate VRAM |
 |-------|------------|-----------------|
-| bitnet_b1_58-large (0.7B) | 0.7B | ~0.5 GB |
-| bitnet-b1.58-2B-4T | 2B | ~1.5 GB |
+| BitNet b1.58 2B-4T | 2B | ~1.5 GB |
 
 
 ## Installation
@@ -26,7 +25,7 @@ Pass a URL to a GGUF file. The model is downloaded, parsed, and uploaded to the 
 import { BitNet } from "0xbitnet";
 
 const model = await BitNet.load(
-  "https://huggingface.co/m96-chan/bitnet-b1.58-2B-4T-gguf/resolve/main/bitnet-b1.58-2B-4T.gguf"
+  "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf"
 );
 ```
 
