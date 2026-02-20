@@ -34,7 +34,7 @@ import { Tokenizer } from "./tokenizer/tokenizer.js";
 import type { DiagnosticResult } from "./types.js";
 
 /**
- * High-level API for BitNet inference in the browser.
+ * High-level API for BitNet inference on WebGPU.
  *
  * @example
  * ```ts

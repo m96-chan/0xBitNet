@@ -32,7 +32,10 @@ export const BITNET_0_7B_CONFIG: ModelConfig = {
   activation: "silu",
 };
 
-/** Default config for HF1BitLLM/bitnet_b1_58-3B */
+/**
+ * Default config for HF1BitLLM/bitnet_b1_58-3B.
+ * @deprecated The upstream HuggingFace model has been removed. This config is kept for backward compatibility.
+ */
 export const BITNET_3B_CONFIG: ModelConfig = {
   modelType: "bitnet",
   vocabSize: 32002,
