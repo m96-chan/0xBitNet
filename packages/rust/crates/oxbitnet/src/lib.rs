@@ -9,9 +9,11 @@
 //! # async fn example() -> oxbitnet::Result<()> {
 //! let mut bitnet = BitNet::load("model.gguf", Default::default()).await?;
 //!
-//! let mut stream = bitnet.generate("Hello!", Default::default());
-//! while let Some(token) = stream.next().await {
-//!     print!("{token}");
+//! {
+//!     let mut stream = bitnet.generate("Hello!", Default::default());
+//!     while let Some(token) = stream.next().await {
+//!         print!("{token}");
+//!     }
 //! }
 //!
 //! bitnet.dispose();
