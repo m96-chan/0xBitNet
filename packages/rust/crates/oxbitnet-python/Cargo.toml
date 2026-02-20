@@ -1,0 +1,15 @@
+[package]
+name = "oxbitnet-python"
+version = "0.3.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "oxbitnet"
+crate-type = ["cdylib"]
+
+[dependencies]
+oxbitnet = { path = "../oxbitnet" }
+pyo3 = { version = "0.28", features = ["extension-module"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+futures = "0.3"

@@ -6,6 +6,8 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/0xbitnet"><img src="https://img.shields.io/npm/v/0xbitnet" alt="npm"></a>
+  <a href="https://crates.io/crates/oxbitnet"><img src="https://img.shields.io/crates/v/oxbitnet" alt="crates.io"></a>
+  <a href="https://pypi.org/project/oxbitnet/"><img src="https://img.shields.io/pypi/v/oxbitnet" alt="PyPI"></a>
   <a href="https://github.com/m96-chan/0xBitNet/actions"><img src="https://img.shields.io/github/actions/workflow/status/m96-chan/0xBitNet/ci.yml?branch=main" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/m96-chan/0xBitNet" alt="License"></a>
 </p>
@@ -20,19 +22,20 @@
 
 ---
 
-0xBitNet is a TypeScript library for 1-bit LLM inference on WebGPU. It implements BitNet's ternary compute kernels in WGSL (WebGPU Shading Language) and wraps them in an ergonomic TypeScript API. Works in any environment with a WebGPU device — browsers, Deno, Node.js with WebGPU-native bindings, or embedded via wgpu/Dawn.
+0xBitNet runs BitNet b1.58 ternary LLMs on WebGPU. Custom WGSL compute kernels handle the ternary matrix operations, with bindings for TypeScript, Rust, and Python. Works in browsers, Node.js, and native apps.
 
 ## Highlights
 
 - **Pure WebGPU** — Custom WGSL kernels for ternary matrix operations (no WASM, no server)
-- **Cross-platform** — Runs anywhere WebGPU is available: browsers, Deno, Node.js, native apps
-- **TypeScript-first** — Type-safe API with full ESM and CJS support
-- **Chat templates** — Built-in chat message formatting with `ChatMessage[]`
-- **Automatic caching** — Models are cached in IndexedDB (browser) after first download
-- **Offline-capable** — Works without a network connection after the initial model download
-- **NPM package** — `npm install 0xbitnet`
+- **Multi-language** — TypeScript (`0xbitnet`), Rust (`oxbitnet`), Python (`oxbitnet`)
+- **Cross-platform** — Browsers, Node.js, Deno, native apps via wgpu
+- **Chat templates** — Built-in LLaMA 3 chat message formatting
+- **Automatic caching** — IndexedDB (browser) / disk cache (native)
+- **Streaming** — Token-by-token output via async generators / streams / callbacks
 
 ## Quick Start
+
+### TypeScript / JavaScript
 
 ```bash
 npm install 0xbitnet
@@ -53,7 +56,47 @@ for await (const token of model.generate("The meaning of life is")) {
 model.dispose();
 ```
 
-### Chat Messages
+### Rust
+
+```bash
+cargo add oxbitnet
+```
+
+```rust
+use oxbitnet::BitNet;
+use futures::StreamExt;
+
+let mut model = BitNet::load("model.gguf", Default::default()).await?;
+
+let mut stream = model.generate("Hello!", Default::default());
+while let Some(token) = stream.next().await {
+    print!("{token}");
+}
+
+model.dispose();
+```
+
+### Python
+
+```bash
+pip install oxbitnet
+```
+
+```python
+from oxbitnet import BitNet
+
+model = BitNet.load_sync("model.gguf")
+
+model.chat(
+    [("system", "You are a helpful assistant."), ("user", "Hello!")],
+    on_token=lambda t: print(t, end="", flush=True),
+    temperature=0.7,
+)
+
+model.dispose()
+```
+
+### Chat Messages (TypeScript)
 
 ```typescript
 const messages = [
@@ -66,19 +109,6 @@ for await (const token of model.generate(messages, { maxTokens: 128, temperature
 }
 ```
 
-### Cache Management
-
-In browsers, models are automatically cached in IndexedDB after the first download.
-
-```typescript
-import { listCachedModels, deleteCachedModel } from "0xbitnet";
-
-const cached = await listCachedModels();
-console.log("Cached models:", cached);
-
-await deleteCachedModel("https://example.com/model.gguf");
-```
-
 ## Supported Models
 
 | Model | GGUF | Parameters | VRAM |
@@ -87,9 +117,17 @@ await deleteCachedModel("https://example.com/model.gguf");
 
 More models are planned — see [#1](https://github.com/m96-chan/0xBitNet/issues/1) and [Model Compatibility](docs/model-compatibility.md) for GGUF requirements.
 
+## Install
+
+| Language | Package | Install |
+|----------|---------|---------|
+| TypeScript / JS | [`0xbitnet`](https://www.npmjs.com/package/0xbitnet) | `npm install 0xbitnet` |
+| Rust | [`oxbitnet`](https://crates.io/crates/oxbitnet) | `cargo add oxbitnet` |
+| Python | [`oxbitnet`](https://pypi.org/project/oxbitnet/) | `pip install oxbitnet` |
+
 ## API Overview
 
-The main entry point is the `BitNet` class:
+### TypeScript
 
 | Method | Description |
 |--------|-------------|
@@ -98,9 +136,24 @@ The main entry point is the `BitNet` class:
 | `bitnet.diagnose(prompt?)` | Run GPU diagnostics on a forward pass |
 | `bitnet.dispose()` | Release all GPU resources |
 
-Standalone functions: `initGPU()`, `listCachedModels()`, `deleteCachedModel(url)`
+### Rust
 
-Full details in the [API Reference](docs/api-reference.md).
+| Method | Description |
+|--------|-------------|
+| `BitNet::load(source, options).await` | Load a GGUF model |
+| `bitnet.generate(prompt, options)` | Stream tokens as `impl Stream<Item = String>` |
+| `bitnet.generate_chat(messages, options)` | Chat with template formatting |
+| `bitnet.dispose()` | Release all GPU resources |
+
+### Python
+
+| Method | Description |
+|--------|-------------|
+| `BitNet.load_sync(source)` | Load a GGUF model |
+| `model.chat(messages, on_token)` | Chat with streaming callback |
+| `model.generate(prompt, on_token)` | Generate with streaming callback |
+| `model.generate_sync(prompt)` | Generate, return full string |
+| `model.dispose()` | Release all GPU resources |
 
 ## Platform Support
 
@@ -111,7 +164,11 @@ Full details in the [API Reference](docs/api-reference.md).
 - Firefox Nightly (behind flag)
 - Safari 18+
 
-**Native:**
+**Native (Rust / Python):**
+- Uses [wgpu](https://wgpu.rs/) — Vulkan, Metal, DX12 backends automatically
+- No browser or WebGPU runtime needed
+
+**Native (Node.js / Deno):**
 - Deno (built-in WebGPU)
 - Node.js with [`webgpu`](https://www.npmjs.com/package/webgpu) npm package (Dawn bindings) — see [Node.js CLI example](examples/node-cli/)
 - Any runtime exposing the WebGPU API (e.g., wgpu-native, Electron)
@@ -137,35 +194,54 @@ cd examples/node-cli
 npm install && npm start
 ```
 
+### Rust CLI
+
+Interactive chat using native wgpu.
+
+```bash
+cd packages/rust
+cargo run --example chat --release
+```
+
+### Python CLI
+
+Interactive chat via Python bindings.
+
+```bash
+pip install oxbitnet
+python packages/rust/crates/oxbitnet-python/examples/chat.py
+```
+
 ## Architecture
 
 ```
 0xbitnet/
-├── packages/core/          # WGSL kernels + TypeScript API (npm: 0xbitnet)
-│   └── src/
-│       ├── gpu/            # WebGPU device init, buffer pool
-│       ├── model/          # GGUF/Safetensors parser, weight loader, config
-│       ├── nn/             # Transformer layers, attention, BitLinear
-│       ├── shaders/        # WGSL compute shaders
-│       ├── tokenizer/      # BPE tokenizer, chat templates
-│       └── worker/         # Worker thread support
+├── packages/
+│   ├── core/               # WGSL kernels + TypeScript API (npm: 0xbitnet)
+│   │   └── src/
+│   │       ├── gpu/        # WebGPU device init, buffer pool
+│   │       ├── model/      # GGUF parser, weight loader, config
+│   │       ├── nn/         # Transformer layers, attention, BitLinear
+│   │       ├── shaders/    # 12 WGSL compute shaders (shared with Rust)
+│   │       └── tokenizer/  # BPE tokenizer, chat templates
+│   └── rust/               # Rust + Python bindings
+│       └── crates/
+│           ├── oxbitnet/           # Rust library (crates.io: oxbitnet)
+│           └── oxbitnet-python/    # Python bindings via PyO3 (PyPI: oxbitnet)
 ├── examples/
 │   ├── web-chat/           # Chat app demo (Vite)
 │   ├── tl-dr-widget/       # Offline TL;DR widget demo (Vite)
 │   └── node-cli/           # Node.js CLI using Dawn WebGPU bindings
-└── docs/                   # Documentation
-    ├── getting-started.md
-    ├── api-reference.md
-    ├── architecture.md
-    └── model-compatibility.md
+└── docs/
 ```
 
 See [Architecture](docs/architecture.md) for data flow and internals.
 
 ## Prerequisites
 
-- Node.js 18+
-- A WebGPU-capable environment (see [Platform Support](#platform-support))
+- **TypeScript/JS**: Node.js 18+, a WebGPU-capable environment
+- **Rust**: Rust 1.75+, a Vulkan/Metal/DX12-capable GPU
+- **Python**: Python 3.9+, `pip install oxbitnet`
 
 ## Contributing
 

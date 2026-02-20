@@ -6,6 +6,8 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/0xbitnet"><img src="https://img.shields.io/npm/v/0xbitnet" alt="npm"></a>
+  <a href="https://crates.io/crates/oxbitnet"><img src="https://img.shields.io/crates/v/oxbitnet" alt="crates.io"></a>
+  <a href="https://pypi.org/project/oxbitnet/"><img src="https://img.shields.io/pypi/v/oxbitnet" alt="PyPI"></a>
   <a href="https://github.com/m96-chan/0xBitNet/actions"><img src="https://img.shields.io/github/actions/workflow/status/m96-chan/0xBitNet/ci.yml?branch=main" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/m96-chan/0xBitNet" alt="License"></a>
 </p>
@@ -20,17 +22,18 @@
 
 ---
 
-0xBitNet is a TypeScript library for 1-bit LLM inference on WebGPU. It implements BitNet's ternary compute kernels in WGSL (WebGPU Shading Language) and wraps them in an ergonomic TypeScript API. Works in any environment with a WebGPU device — browsers, Deno, Node.js with WebGPU-native bindings, or embedded via wgpu/Dawn.
+0xBitNet runs BitNet b1.58 ternary LLMs on WebGPU. Custom WGSL compute kernels handle the ternary matrix operations, with bindings for TypeScript, Rust, and Python.
+
+Also available as: [`oxbitnet`](https://crates.io/crates/oxbitnet) (Rust) / [`oxbitnet`](https://pypi.org/project/oxbitnet/) (Python)
 
 ## Highlights
 
 - **Pure WebGPU** — Custom WGSL kernels for ternary matrix operations (no WASM, no server)
-- **Cross-platform** — Runs anywhere WebGPU is available: browsers, Deno, Node.js, native apps
-- **TypeScript-first** — Type-safe API with full ESM and CJS support
-- **Chat templates** — Built-in chat message formatting with `ChatMessage[]`
-- **Automatic caching** — Models are cached in IndexedDB (browser) after first download
-- **Offline-capable** — Works without a network connection after the initial model download
-- **NPM package** — `npm install 0xbitnet`
+- **Multi-language** — TypeScript (`0xbitnet`), Rust (`oxbitnet`), Python (`oxbitnet`)
+- **Cross-platform** — Browsers, Node.js, Deno, native apps via wgpu
+- **Chat templates** — Built-in LLaMA 3 chat message formatting
+- **Automatic caching** — IndexedDB (browser) / disk cache (native)
+- **Streaming** — Token-by-token output via async generators / streams / callbacks
 
 ## Quick Start
 
