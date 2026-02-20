@@ -37,6 +37,11 @@
     "1-bit",
     "transformer"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/m96-chan/0xBitNet",
+    "directory": "packages/core"
+  },
   "license": "MIT",
   "devDependencies": {
     "@webgpu/types": "^0.1.52",
