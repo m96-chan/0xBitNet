@@ -1,8 +1,7 @@
 name: Publish to npm
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:  # manual only — npm OTP requires local publish
 
 jobs:
   publish:
