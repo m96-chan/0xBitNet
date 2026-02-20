@@ -113,7 +113,7 @@ Full details in the [API Reference](docs/api-reference.md).
 
 **Native:**
 - Deno (built-in WebGPU)
-- Node.js with [wgpu](https://github.com/gfx-rs/wgpu) or [Dawn](https://dawn.googlesource.com/dawn) bindings
+- Node.js with [`webgpu`](https://www.npmjs.com/package/webgpu) npm package (Dawn bindings) — see [Node.js CLI example](examples/node-cli/)
 - Any runtime exposing the WebGPU API (e.g., wgpu-native, Electron)
 
 A dedicated GPU with sufficient VRAM is required (see [Supported Models](#supported-models) for estimates).
@@ -127,6 +127,15 @@ A WebGPU-powered chat application. Downloads the model on first visit, then runs
 ### [TL;DR Widget](https://m96-chan.github.io/0xBitNet/tldr/)
 
 An offline-ready summarization widget. Provides LLM-powered TL;DR without any network dependency.
+
+### [Node.js CLI](examples/node-cli/)
+
+Run BitNet from the command line using Node.js and the [`webgpu`](https://www.npmjs.com/package/webgpu) npm package (Dawn bindings). Interactive chat with streaming output and tok/s metrics.
+
+```bash
+cd examples/node-cli
+npm install && npm start
+```
 
 ## Architecture
 
@@ -142,7 +151,8 @@ An offline-ready summarization widget. Provides LLM-powered TL;DR without any ne
 │       └── worker/         # Worker thread support
 ├── examples/
 │   ├── web-chat/           # Chat app demo (Vite)
-│   └── tl-dr-widget/       # Offline TL;DR widget demo (Vite)
+│   ├── tl-dr-widget/       # Offline TL;DR widget demo (Vite)
+│   └── node-cli/           # Node.js CLI using Dawn WebGPU bindings
 └── docs/                   # Documentation
     ├── getting-started.md
     ├── api-reference.md

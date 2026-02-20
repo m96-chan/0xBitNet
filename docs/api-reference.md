@@ -118,7 +118,7 @@ interface LoadOptions {
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `device` | `GPUDevice` | Auto-created | Existing GPU device to reuse |
+| `device` | `GPUDevice` | Auto-created | Existing GPU device to reuse (required for Node.js — see [Getting Started](getting-started.md#nodejs-usage)) |
 | `format` | `WeightFormat` | Auto-detected | Force weight format |
 | `onProgress` | `(progress: LoadProgress) => void` | — | Progress callback |
 | `signal` | `AbortSignal` | — | Abort signal to cancel loading |

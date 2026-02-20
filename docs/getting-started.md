@@ -180,6 +180,51 @@ Always call `dispose()` when you're done with a model to release GPU resources:
 model.dispose();
 ```
 
+## Node.js Usage
+
+0xBitNet runs in Node.js using the [`webgpu`](https://www.npmjs.com/package/webgpu) npm package, which provides Dawn (Google's WebGPU implementation) bindings.
+
+```bash
+npm install 0xbitnet webgpu
+```
+
+```typescript
+import { create, globals } from "webgpu";
+import { BitNet } from "0xbitnet";
+
+// Inject WebGPU globals (GPUBufferUsage, GPUMapMode, etc.)
+Object.assign(globalThis, globals);
+
+// Create a Dawn WebGPU device
+const gpu = create([]);
+const adapter = await gpu.requestAdapter({ powerPreference: "high-performance" });
+const device = await adapter!.requestDevice({
+  requiredLimits: {
+    maxBufferSize: adapter!.limits.maxBufferSize,
+    maxStorageBufferBindingSize: adapter!.limits.maxStorageBufferBindingSize,
+  },
+});
+
+// Pass the device to BitNet.load()
+const model = await BitNet.load(
+  "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf",
+  { device, onProgress: (p) => console.log(`${p.phase}: ${(p.fraction * 100).toFixed(1)}%`) }
+);
+
+for await (const token of model.generate("The meaning of life is")) {
+  process.stdout.write(token);
+}
+
+model.dispose();
+```
+
+Key points:
+- `Object.assign(globalThis, globals)` is required — it sets up `GPUBufferUsage`, `GPUMapMode`, and other WebGPU constants that the core library reads from `globalThis`
+- Pass your `device` via `LoadOptions.device` so the library skips its browser-oriented `navigator.gpu` init
+- IndexedDB caching is automatically skipped in Node.js
+
+See [`examples/node-cli/`](../examples/node-cli/) for a complete interactive CLI example.
+
 ## Next Steps
 
 - [API Reference](api-reference.md) — Full API documentation
