@@ -1,8 +1,9 @@
-import { BitNet } from "0xbitnet";
+import { BitNet, listCachedModels, deleteCachedModel } from "0xbitnet";
 import type { LoadProgress, ChatMessage } from "0xbitnet";
 
 // DOM elements
 const loadSection = document.getElementById("load-section")!;
+const cachedModelsDiv = document.getElementById("cached-models")!;
 const modelUrlInput = document.getElementById("model-url") as HTMLInputElement;
 const loadBtn = document.getElementById("load-btn") as HTMLButtonElement;
 const statusBar = document.getElementById("status-bar")!;
@@ -16,10 +17,101 @@ const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
 let bitnet: BitNet | null = null;
 let isGenerating = false;
 
+// ─── Cached Model Picker ───
+
+function getSelectedModelUrl(): string {
+  const selected = document.querySelector<HTMLInputElement>(
+    'input[name="model-source"]:checked'
+  );
+  if (!selected || selected.value === "__new__") {
+    return modelUrlInput.value.trim();
+  }
+  return selected.value;
+}
+
+async function renderCachedModels(): Promise<void> {
+  const urls = await listCachedModels();
+
+  if (urls.length === 0) {
+    cachedModelsDiv.style.display = "none";
+    modelUrlInput.style.display = "";
+    return;
+  }
+
+  cachedModelsDiv.style.display = "";
+  modelUrlInput.style.display = "none";
+
+  const list = document.createElement("div");
+  list.className = "cached-list";
+
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i];
+    const fileName = url.split("/").pop() || url;
+
+    const row = document.createElement("div");
+    row.className = "cached-item";
+
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "model-source";
+    radio.value = url;
+    radio.id = `cached-${i}`;
+    if (i === 0) radio.checked = true;
+
+    const label = document.createElement("label");
+    label.htmlFor = `cached-${i}`;
+    label.textContent = fileName;
+    label.title = url;
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "delete-btn";
+    delBtn.textContent = "Delete";
+    delBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      await deleteCachedModel(url);
+      await renderCachedModels();
+    });
+
+    row.append(radio, label, delBtn);
+    list.appendChild(row);
+  }
+
+  // "New URL" option
+  const newRow = document.createElement("div");
+  newRow.className = "cached-item";
+
+  const newRadio = document.createElement("input");
+  newRadio.type = "radio";
+  newRadio.name = "model-source";
+  newRadio.value = "__new__";
+  newRadio.id = "cached-new";
+
+  const newLabel = document.createElement("label");
+  newLabel.htmlFor = "cached-new";
+  newLabel.textContent = "New URL:";
+  newLabel.style.flex = "none";
+
+  const newInput = document.createElement("input");
+  newInput.type = "text";
+  newInput.placeholder = "https://huggingface.co/.../model.gguf";
+  newInput.addEventListener("focus", () => {
+    newRadio.checked = true;
+  });
+  newInput.addEventListener("input", () => {
+    modelUrlInput.value = newInput.value;
+  });
+
+  newRow.append(newRadio, newLabel, newInput);
+  list.appendChild(newRow);
+
+  cachedModelsDiv.innerHTML = "";
+  cachedModelsDiv.appendChild(list);
+}
+
 // ─── Load Model ───
 
 loadBtn.addEventListener("click", async () => {
-  const url = modelUrlInput.value.trim();
+  const url = getSelectedModelUrl();
   if (!url) return;
 
   loadBtn.disabled = true;
@@ -42,6 +134,9 @@ loadBtn.addEventListener("click", async () => {
     userInput.focus();
 
     addMessage("assistant", "Model loaded! Type a message or click 'Diagnose' to run GPU diagnostics.");
+
+    // Refresh cached list (new model now appears)
+    await renderCachedModels();
 
     // Run GPU diagnostic automatically after load
     runDiagnose();
@@ -133,6 +228,10 @@ async function runDiagnose(): Promise<void> {
     console.error("Diagnostic error:", err);
   }
 }
+
+// ─── Init ───
+
+renderCachedModels();
 
 // ─── WebGPU Check ───
 

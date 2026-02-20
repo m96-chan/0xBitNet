@@ -415,6 +415,35 @@ function idbPut(db: IDBDatabase, key: string, value: ArrayBuffer): Promise<void>
   });
 }
 
+export async function listCachedModels(): Promise<string[]> {
+  if (typeof indexedDB === "undefined") return [];
+  try {
+    const db = await openModelDB();
+    const keys = await new Promise<string[]>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const req = tx.objectStore(IDB_STORE).getAllKeys();
+      req.onsuccess = () => resolve(req.result as string[]);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return keys;
+  } catch {
+    return [];
+  }
+}
+
+export async function deleteCachedModel(url: string): Promise<void> {
+  if (typeof indexedDB === "undefined") return;
+  const db = await openModelDB();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).delete(url);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
+
 async function fetchModel(
   url: string,
   onProgress: (loaded: number, total: number) => void

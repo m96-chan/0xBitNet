@@ -18,7 +18,7 @@ export { BufferPool } from "./gpu/buffer-pool.js";
 export { GGUFParser } from "./model/gguf.js";
 export { parseSafetensorsHeader, getTensorInfos } from "./model/safetensors.js";
 export { WeightStore } from "./model/weights.js";
-export { loadModel } from "./model/loader.js";
+export { loadModel, listCachedModels, deleteCachedModel } from "./model/loader.js";
 export {
   BITNET_2B_4T_CONFIG,
   BITNET_0_7B_CONFIG,
