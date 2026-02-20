@@ -197,8 +197,8 @@ async function summarize(): Promise<void> {
 
   const maxTokens = parseInt(maxTokensSelect.value, 10);
   const messages: ChatMessage[] = [
-    { role: "system", content: "You are a helpful assistant. Summarize the user's text concisely." },
-    { role: "user", content: `Summarize the following text:\n\n${text}` },
+    { role: "system", content: "You are a helpful assistant. Summarize the user's text in at most 2 sentences." },
+    { role: "user", content: `Summarize the following text in 1-2 sentences:\n\n${text}` },
   ];
 
   const startTime = performance.now();
