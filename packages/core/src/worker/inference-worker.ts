@@ -34,7 +34,7 @@ async function handleLoad(
     // This is set during loading if available
     // For now, the tokenizer must be loaded separately or extracted from GGUF
 
-    postResponse({ id, type: "done", payload: { config: result.config } });
+    postResponse({ id, type: "done" });
   } catch (err) {
     postResponse({
       id,
@@ -47,10 +47,8 @@ async function handleLoad(
 async function handleGenerate(
   id: number,
   payload: {
-    prompt: string;
-    maxTokens?: number;
-    temperature?: number;
-    topK?: number;
+    prompt: string | import("../types.js").ChatMessage[];
+    options?: import("../types.js").GenerateOptions;
   }
 ): Promise<void> {
   if (!model || !tokenizer) {
@@ -63,10 +61,13 @@ async function handleGenerate(
   }
 
   try {
-    const inputIds = tokenizer.encode(payload.prompt);
-    const maxTokens = payload.maxTokens ?? 256;
-    const temperature = payload.temperature ?? 1.0;
-    const topK = payload.topK ?? 50;
+    const prompt = payload.prompt;
+    const inputIds = Array.isArray(prompt)
+      ? tokenizer.applyChatTemplate(prompt)
+      : tokenizer.encode(prompt);
+    const maxTokens = payload.options?.maxTokens ?? 256;
+    const temperature = payload.options?.temperature ?? 1.0;
+    const topK = payload.options?.topK ?? 50;
 
     model.resetKVCache();
 
@@ -87,13 +88,13 @@ async function handleGenerate(
       }
 
       const tokenStr = tokenizer.decode([nextToken]);
-      postResponse({ id, type: "token", payload: { token: tokenStr } });
+      postResponse({ id, type: "token", payload: tokenStr });
 
       // Decode step: process just the new token
       logits = model.forward(new Uint32Array([nextToken]));
     }
 
-    postResponse({ id, type: "done", payload: null });
+    postResponse({ id, type: "done" });
   } catch (err) {
     postResponse({
       id,
@@ -107,7 +108,7 @@ function handleDispose(id: number): void {
   model?.dispose();
   model = null;
   tokenizer = null;
-  postResponse({ id, type: "done", payload: null });
+  postResponse({ id, type: "done" });
 }
 
 /**
@@ -195,21 +196,16 @@ async function sampleFromLogits(
 
 // Message handler
 self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
-  const { id, type, payload } = event.data;
-  switch (type) {
+  const msg = event.data;
+  switch (msg.type) {
     case "load":
-      handleLoad(id, payload as { source: string });
+      handleLoad(msg.id, msg.payload);
       break;
     case "generate":
-      handleGenerate(id, payload as {
-        prompt: string;
-        maxTokens?: number;
-        temperature?: number;
-        topK?: number;
-      });
+      handleGenerate(msg.id, msg.payload);
       break;
     case "dispose":
-      handleDispose(id);
+      handleDispose(msg.id);
       break;
   }
 });

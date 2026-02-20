@@ -10,13 +10,22 @@ export class GPUDeviceError extends Error {
 /**
  * Initialize WebGPU adapter and device.
  * Requests maximum buffer sizes and compute invocations for large model support.
+ *
+ * @param existingDevice - Optional existing GPU device to reuse.
+ * @returns GPU context with device, adapter, and limits.
+ * @throws {GPUDeviceError} If WebGPU is not available or adapter request fails.
+ *
+ * @example
+ * ```ts
+ * const gpu = await initGPU();
+ * console.log("Max buffer size:", gpu.limits.maxBufferSize);
+ * ```
  */
 export async function initGPU(existingDevice?: GPUDevice): Promise<GPUContext> {
   if (existingDevice) {
-    const adapter = null as unknown as GPUAdapter;
     return {
       device: existingDevice,
-      adapter,
+      adapter: null,
       limits: existingDevice.limits,
     };
   }

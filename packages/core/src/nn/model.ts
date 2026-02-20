@@ -6,26 +6,14 @@ import { Attention, createKVCache } from "./attention.js";
 import { FFN } from "./ffn.js";
 import { type BindGroupCache, createBGCache, clearBGCache, cachedBG } from "./bg-cache.js";
 import { WeightStore } from "../model/weights.js";
-import type { ModelConfig, KVCache } from "../types.js";
+import type { ModelConfig, KVCache, DiagnosticResult } from "../types.js";
 import { headDim } from "../model/config.js";
+
+export type { DiagnosticResult };
 
 import embeddingWGSL from "../shaders/embedding.wgsl";
 import rmsnormWGSL from "../shaders/rmsnorm.wgsl";
 import f32MatmulWGSL from "../shaders/f32_matmul.wgsl";
-
-/** Diagnostic result for a single pipeline stage */
-export interface DiagnosticResult {
-  name: string;
-  length: number;
-  min: number;
-  max: number;
-  mean: number;
-  rms: number;
-  nanCount: number;
-  infCount: number;
-  zeroCount: number;
-  first8: number[];
-}
 
 /**
  * Full BitNet model: embedding → N × transformer → final RMSNorm → LM head
@@ -34,7 +22,7 @@ export class BitNetModel {
   private device: GPUDevice;
   private pipelines: PipelineManager;
   private pool: BufferPool;
-  config: ModelConfig;
+  readonly config: ModelConfig;
 
   private embedTokens: GPUBuffer;
   private layers: TransformerBlock[];
@@ -76,6 +64,20 @@ export class BitNetModel {
 
   /**
    * Build a full model from loaded weights.
+   *
+   * @param device - WebGPU device.
+   * @param config - Model architecture configuration.
+   * @param weights - Uploaded weight tensors.
+   * @param maxSeqLen - Maximum sequence length for KV cache allocation.
+   * @returns A ready-to-use `BitNetModel` instance.
+   *
+   * @example
+   * ```ts
+   * const gpu = await initGPU();
+   * const { config, weights } = await loadModel(url, gpu.device);
+   * const model = BitNetModel.build(gpu.device, config, weights);
+   * const logits = model.forward(tokenIds);
+   * ```
    */
   static build(
     device: GPUDevice,

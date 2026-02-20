@@ -6,39 +6,32 @@ export type {
   LoadProgress,
   GenerateOptions,
   GPUContext,
-  KVCache,
   TokenizerConfig,
+  ChatMessage,
+  DiagnosticResult,
+  WeightFormat,
   WorkerRequest,
   WorkerResponse,
 } from "./types.js";
 
 export { initGPU, GPUDeviceError } from "./gpu/device.js";
-export { PipelineManager } from "./gpu/pipeline.js";
-export { BufferPool } from "./gpu/buffer-pool.js";
-export { GGUFParser } from "./model/gguf.js";
-export { parseSafetensorsHeader, getTensorInfos } from "./model/safetensors.js";
 export { WeightStore } from "./model/weights.js";
 export { loadModel, listCachedModels, deleteCachedModel } from "./model/loader.js";
+export type { LoadResult } from "./model/loader.js";
 export {
   BITNET_2B_4T_CONFIG,
   BITNET_0_7B_CONFIG,
   BITNET_3B_CONFIG,
 } from "./model/config.js";
-export { BitLinear } from "./nn/bitlinear.js";
-export { Attention, createKVCache } from "./nn/attention.js";
-export { FFN } from "./nn/ffn.js";
-export { TransformerBlock } from "./nn/transformer.js";
 export { BitNetModel } from "./nn/model.js";
-export type { DiagnosticResult } from "./nn/model.js";
 export { Tokenizer } from "./tokenizer/tokenizer.js";
-export type { ChatMessage } from "./tokenizer/tokenizer.js";
 
-import type { LoadOptions, GenerateOptions, LoadProgress } from "./types.js";
+import type { LoadOptions, GenerateOptions, ChatMessage } from "./types.js";
 import { initGPU } from "./gpu/device.js";
 import { loadModel } from "./model/loader.js";
 import { BitNetModel } from "./nn/model.js";
 import { Tokenizer } from "./tokenizer/tokenizer.js";
-import type { ChatMessage } from "./tokenizer/tokenizer.js";
+import type { DiagnosticResult } from "./types.js";
 
 /**
  * High-level API for BitNet inference in the browser.
@@ -82,8 +75,22 @@ export class BitNet {
   /**
    * Load a BitNet model from a URL.
    *
-   * @param source URL to a GGUF or Safetensors file
-   * @param options Loading options
+   * @param source - URL to a GGUF or Safetensors file.
+   * @param options - Loading options including progress callback and abort signal.
+   * @returns A ready-to-use `BitNet` instance.
+   *
+   * @example
+   * ```ts
+   * // Basic usage
+   * const bitnet = await BitNet.load("https://example.com/model.gguf");
+   *
+   * // With progress and cancellation
+   * const controller = new AbortController();
+   * const bitnet = await BitNet.load(url, {
+   *   onProgress: (p) => console.log(p.phase, p.fraction),
+   *   signal: controller.signal,
+   * });
+   * ```
    */
   static async load(
     source: string | URL,
@@ -93,7 +100,12 @@ export class BitNet {
       ? await initGPU(options.device)
       : await initGPU();
 
-    const result = await loadModel(source, gpu.device, options.onProgress);
+    const result = await loadModel(
+      source,
+      gpu.device,
+      options.onProgress,
+      options.signal
+    );
 
     const model = BitNetModel.build(gpu.device, result.config, result.weights);
 
@@ -107,7 +119,7 @@ export class BitNet {
       // Try to fetch tokenizer.json from the same directory
       const baseUrl = url.substring(0, url.lastIndexOf("/"));
       const tokenizerUrl = `${baseUrl}/tokenizer.json`;
-      const tokResponse = await fetch(tokenizerUrl);
+      const tokResponse = await fetch(tokenizerUrl, { signal: options.signal });
       if (tokResponse.ok) {
         const data = await tokResponse.json();
         tokenizer = Tokenizer.fromJSON(data);
@@ -129,6 +141,30 @@ export class BitNet {
   /**
    * Generate text from a prompt.
    * Yields tokens as they are generated.
+   *
+   * @param prompt - A plain text string or an array of chat messages.
+   * @param options - Generation options including sampling parameters and abort signal.
+   *
+   * @example
+   * ```ts
+   * // Plain text prompt
+   * for await (const token of bitnet.generate("Once upon a time")) {
+   *   process.stdout.write(token);
+   * }
+   *
+   * // Chat messages with cancellation
+   * const controller = new AbortController();
+   * const messages = [
+   *   { role: "user" as const, content: "Summarize quantum computing" },
+   * ];
+   * for await (const token of bitnet.generate(messages, {
+   *   maxTokens: 512,
+   *   temperature: 0.7,
+   *   signal: controller.signal,
+   * })) {
+   *   output += token;
+   * }
+   * ```
    */
   async *generate(
     prompt: string | ChatMessage[],
@@ -139,6 +175,7 @@ export class BitNet {
     const topK = options.topK ?? 50;
     const repeatPenalty = options.repeatPenalty ?? 1.0;
     const repeatLastN = options.repeatLastN ?? 64;
+    const signal = options.signal;
 
     const inputIds = Array.isArray(prompt)
       ? this.tokenizer.applyChatTemplate(prompt)
@@ -155,6 +192,8 @@ export class BitNet {
     let logits = this.model.forward(inputIds);
 
     for (let i = 0; i < maxTokens; i++) {
+      if (signal?.aborted) break;
+
       const window = repeatLastN > 0
         ? recentTokens.slice(-repeatLastN)
         : recentTokens;
@@ -183,7 +222,17 @@ export class BitNet {
     }
   }
 
-  /** Release all GPU resources. */
+  /**
+   * Release all GPU resources held by this instance.
+   * Must be called when the model is no longer needed.
+   *
+   * @example
+   * ```ts
+   * const bitnet = await BitNet.load(url);
+   * // ... use the model ...
+   * bitnet.dispose();
+   * ```
+   */
   dispose(): void {
     this.readbackBuffer.destroy();
     this.model.dispose();
@@ -192,8 +241,19 @@ export class BitNet {
   /**
    * Run GPU diagnostic: forward pass stage-by-stage with readback.
    * Returns statistics for each intermediate tensor.
+   *
+   * @param prompt - Input text to run through the model (default: `"Hello"`).
+   * @returns Array of diagnostic results, one per pipeline stage.
+   *
+   * @example
+   * ```ts
+   * const results = await bitnet.diagnose("Test input");
+   * for (const r of results) {
+   *   console.log(`${r.name}: mean=${r.mean.toFixed(4)}, rms=${r.rms.toFixed(4)}`);
+   * }
+   * ```
    */
-  async diagnose(prompt = "Hello"): Promise<import("./nn/model.js").DiagnosticResult[]> {
+  async diagnose(prompt = "Hello"): Promise<DiagnosticResult[]> {
     const inputIds = this.tokenizer.encode(prompt);
     return this.model.diagnose(inputIds);
   }

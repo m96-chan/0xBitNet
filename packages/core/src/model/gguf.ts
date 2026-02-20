@@ -2,6 +2,7 @@ import type {
   GGUFFile,
   GGUFHeader,
   GGUFMetadata,
+  GGUFMetadataValue,
   GGUFTensorInfo,
 } from "../types.js";
 
@@ -132,14 +133,12 @@ export class GGUFParser {
     return metadata;
   }
 
-  private readMetadataValue(): string | number | boolean | bigint | GGUFMetadata[] {
+  private readMetadataValue(): GGUFMetadataValue {
     const valueType = this.readU32();
     return this.readValueOfType(valueType);
   }
 
-  private readValueOfType(
-    type: number
-  ): string | number | boolean | bigint | GGUFMetadata[] {
+  private readValueOfType(type: number): GGUFMetadataValue {
     switch (type) {
       case MetaType.UINT8:
         return this.readU8();
@@ -168,11 +167,9 @@ export class GGUFParser {
       case MetaType.ARRAY: {
         const elemType = this.readU32();
         const len = Number(this.readU64());
-        const arr: GGUFMetadata[] = [];
+        const arr: GGUFMetadataValue[] = [];
         for (let i = 0; i < len; i++) {
-          arr.push({
-            value: this.readValueOfType(elemType),
-          } as unknown as GGUFMetadata);
+          arr.push(this.readValueOfType(elemType));
         }
         return arr;
       }

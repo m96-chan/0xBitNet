@@ -21,11 +21,28 @@ export interface LoadResult {
  * - GGUF files (auto-detected by magic bytes or .gguf extension)
  * - Safetensors files (.safetensors extension)
  * - Hugging Face model repos (auto-discovers format)
+ *
+ * @param source - URL to the model file.
+ * @param device - WebGPU device for weight upload.
+ * @param onProgress - Optional progress callback.
+ * @param signal - Optional abort signal to cancel the download.
+ * @returns Loaded model config, weights, and optional GGUF metadata.
+ *
+ * @example
+ * ```ts
+ * const gpu = await initGPU();
+ * const { config, weights } = await loadModel(
+ *   "https://example.com/model.gguf",
+ *   gpu.device,
+ *   (p) => console.log(p.phase, p.fraction),
+ * );
+ * ```
  */
 export async function loadModel(
   source: string | URL,
   device: GPUDevice,
-  onProgress?: (progress: LoadProgress) => void
+  onProgress?: (progress: LoadProgress) => void,
+  signal?: AbortSignal
 ): Promise<LoadResult> {
   const url = typeof source === "string" ? source : source.href;
   const format = detectFormat(url);
@@ -39,7 +56,7 @@ export async function loadModel(
       total,
       fraction: total > 0 ? loaded / total : 0,
     });
-  });
+  }, signal);
 
   onProgress?.({ phase: "parse", loaded: 0, total: 1, fraction: 0 });
 
@@ -308,7 +325,7 @@ function configFromGGUFMetadata(
   const numKVHeads = (get("attention.head_count_kv") as number) ?? numHeads;
   const vocabSize =
     (get("vocab_size") as number) ??
-    (metadata["tokenizer.ggml.tokens"] as unknown[] as string[])?.length ??
+    (metadata["tokenizer.ggml.tokens"] as string[] | undefined)?.length ??
     128256;
   const intermediateSize = (get("feed_forward_length") as number) ?? 6912;
 
@@ -415,6 +432,17 @@ function idbPut(db: IDBDatabase, key: string, value: ArrayBuffer): Promise<void>
   });
 }
 
+/**
+ * List all model URLs cached in IndexedDB.
+ *
+ * @returns Array of cached model URLs.
+ *
+ * @example
+ * ```ts
+ * const cached = await listCachedModels();
+ * console.log("Cached models:", cached);
+ * ```
+ */
 export async function listCachedModels(): Promise<string[]> {
   if (typeof indexedDB === "undefined") return [];
   try {
@@ -432,6 +460,16 @@ export async function listCachedModels(): Promise<string[]> {
   }
 }
 
+/**
+ * Delete a cached model from IndexedDB.
+ *
+ * @param url - The model URL to remove from cache.
+ *
+ * @example
+ * ```ts
+ * await deleteCachedModel("https://example.com/model.gguf");
+ * ```
+ */
 export async function deleteCachedModel(url: string): Promise<void> {
   if (typeof indexedDB === "undefined") return;
   const db = await openModelDB();
@@ -446,7 +484,8 @@ export async function deleteCachedModel(url: string): Promise<void> {
 
 async function fetchModel(
   url: string,
-  onProgress: (loaded: number, total: number) => void
+  onProgress: (loaded: number, total: number) => void,
+  signal?: AbortSignal
 ): Promise<ArrayBuffer> {
   // Try IndexedDB cache first
   if (typeof indexedDB !== "undefined") {
@@ -463,7 +502,7 @@ async function fetchModel(
     }
   }
 
-  const response = await fetch(url);
+  const response = await fetch(url, { signal });
   if (!response.ok) {
     throw new Error(`Failed to fetch model: ${response.status} ${response.statusText}`);
   }

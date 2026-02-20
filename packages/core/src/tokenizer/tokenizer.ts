@@ -1,9 +1,6 @@
-import type { TokenizerConfig } from "../types.js";
+import type { TokenizerConfig, ChatMessage } from "../types.js";
 
-export interface ChatMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
-}
+export type { ChatMessage };
 
 /**
  * Tokenizer with support for:
@@ -27,7 +24,7 @@ export class Tokenizer {
   private textEncoder = new TextEncoder();
   private textDecoder = new TextDecoder("utf-8", { fatal: false });
 
-  constructor(
+  private constructor(
     config: TokenizerConfig,
     vocab: Map<string, number>,
     merges: [string, string][]
@@ -54,32 +51,34 @@ export class Tokenizer {
   /**
    * Create a tokenizer from GGUF metadata.
    * GGUF stores tokens and merge rules in the metadata.
+   *
+   * @param metadata - GGUF metadata containing `tokenizer.ggml.*` keys.
+   * @returns A configured `Tokenizer` instance.
+   *
+   * @example
+   * ```ts
+   * const parser = new GGUFParser(buffer);
+   * const gguf = parser.parse();
+   * const tokenizer = Tokenizer.fromGGUFMetadata(gguf.metadata);
+   * const ids = tokenizer.encode("Hello world");
+   * ```
    */
   static fromGGUFMetadata(metadata: Record<string, unknown>): Tokenizer {
-    const tokens = metadata["tokenizer.ggml.tokens"] as
-      | { value: string }[]
-      | string[];
+    const tokens = metadata["tokenizer.ggml.tokens"] as string[];
     const mergesRaw = metadata["tokenizer.ggml.merges"] as
-      | { value: string }[]
       | string[]
       | undefined;
     const model = (metadata["tokenizer.ggml.model"] as string) ?? "gpt2";
 
     const vocab = new Map<string, number>();
     for (let i = 0; i < tokens.length; i++) {
-      const token =
-        typeof tokens[i] === "string"
-          ? (tokens[i] as string)
-          : (tokens[i] as { value: string }).value;
-      vocab.set(token, i);
+      vocab.set(tokens[i], i);
     }
 
     const merges: [string, string][] = [];
     if (mergesRaw) {
       for (const m of mergesRaw) {
-        const mergeStr =
-          typeof m === "string" ? m : (m as { value: string }).value;
-        const parts = mergeStr.split(" ");
+        const parts = m.split(" ");
         if (parts.length === 2) {
           merges.push([parts[0], parts[1]]);
         }
@@ -102,7 +101,16 @@ export class Tokenizer {
   }
 
   /**
-   * Create a tokenizer from a vocab JSON object.
+   * Create a tokenizer from a vocab JSON object (e.g., `tokenizer.json`).
+   *
+   * @param data - Object with `vocab`, `merges`, and optional `config`.
+   * @returns A configured `Tokenizer` instance.
+   *
+   * @example
+   * ```ts
+   * const resp = await fetch("https://example.com/tokenizer.json");
+   * const tokenizer = Tokenizer.fromJSON(await resp.json());
+   * ```
    */
   static fromJSON(data: {
     vocab: Record<string, number>;

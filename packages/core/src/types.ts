@@ -39,7 +39,7 @@ export type TensorDType =
 
 export interface GPUContext {
   device: GPUDevice;
-  adapter: GPUAdapter;
+  adapter: GPUAdapter | null;
   limits: GPUSupportedLimits;
 }
 
@@ -60,6 +60,8 @@ export interface LoadOptions {
   device?: GPUDevice;
   format?: WeightFormat;
   onProgress?: (progress: LoadProgress) => void;
+  /** Abort signal to cancel the load operation. */
+  signal?: AbortSignal;
 }
 
 export interface LoadProgress {
@@ -70,16 +72,40 @@ export interface LoadProgress {
   fraction: number;
 }
 
+// ─── Chat ───
+
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
 // ─── Generation ───
 
 export interface GenerateOptions {
   maxTokens?: number;
   temperature?: number;
   topK?: number;
-  topP?: number;
   repeatPenalty?: number;
   repeatLastN?: number;
   onToken?: (token: string) => void;
+  /** Abort signal to cancel generation early. */
+  signal?: AbortSignal;
+}
+
+// ─── Diagnostics ───
+
+/** Diagnostic result for a single pipeline stage. */
+export interface DiagnosticResult {
+  name: string;
+  length: number;
+  min: number;
+  max: number;
+  mean: number;
+  rms: number;
+  nanCount: number;
+  infCount: number;
+  zeroCount: number;
+  first8: number[];
 }
 
 // ─── KV Cache ───
@@ -108,8 +134,15 @@ export type GGUFMetadataValueType =
   | "string"
   | "array";
 
+export type GGUFMetadataValue =
+  | string
+  | number
+  | boolean
+  | bigint
+  | GGUFMetadataValue[];
+
 export interface GGUFMetadata {
-  [key: string]: string | number | boolean | bigint | GGUFMetadata[];
+  [key: string]: GGUFMetadataValue;
 }
 
 export interface GGUFTensorInfo {
@@ -156,14 +189,13 @@ export interface TokenizerConfig {
 
 // ─── Worker Messages ───
 
-export interface WorkerRequest {
-  id: number;
-  type: "load" | "generate" | "dispose";
-  payload: unknown;
-}
+export type WorkerRequest =
+  | { id: number; type: "load"; payload: { source: string; options?: LoadOptions } }
+  | { id: number; type: "generate"; payload: { prompt: string | ChatMessage[]; options?: GenerateOptions } }
+  | { id: number; type: "dispose" };
 
-export interface WorkerResponse {
-  id: number;
-  type: "progress" | "token" | "done" | "error";
-  payload: unknown;
-}
+export type WorkerResponse =
+  | { id: number; type: "progress"; payload: LoadProgress }
+  | { id: number; type: "token"; payload: string }
+  | { id: number; type: "done" }
+  | { id: number; type: "error"; payload: { message: string; name?: string } };
