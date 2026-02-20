@@ -257,18 +257,48 @@ export class BitNetModel {
     const normed = this.dispatchFinalNorm(encoder, hidden, N);
     this.pool.release(hidden);
 
-    // LM head
+    // Extract only the last token for LM head (we only need last token's logits)
+    // This also avoids buffer-pool reuse bugs where an oversized buffer
+    // would cause sampleToken to read from the wrong offset.
+    let lmInput: GPUBuffer;
+    if (N > 1) {
+      lmInput = this.pool.acquire(
+        this.config.hiddenSize * 4,
+        GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+      );
+      encoder.copyBufferToBuffer(
+        normed,
+        (N - 1) * this.config.hiddenSize * 4,
+        lmInput,
+        0,
+        this.config.hiddenSize * 4
+      );
+      this.pool.release(normed);
+    } else {
+      lmInput = normed;
+    }
+
+    // LM head (always N=1 — only last token)
     let logits: GPUBuffer;
     if (this.lmHead instanceof BitLinear) {
-      logits = (this.lmHead as BitLinear).forward(normed, N, encoder);
+      logits = (this.lmHead as BitLinear).forward(lmInput, 1, encoder);
     } else {
       // Tied embedding: simple matmul
-      logits = this.dispatchLMHead(encoder, normed, N);
+      logits = this.dispatchLMHead(encoder, lmInput, 1);
     }
-    this.pool.release(normed);
+    if (N > 1) {
+      this.pool.release(lmInput);
+    } else {
+      this.pool.release(normed);
+    }
 
     this.device.queue.submit([encoder.finish()]);
     return logits;
+  }
+
+  /** Release a buffer back to the internal pool (e.g., logits buffer after sampling) */
+  releaseBuffer(buffer: GPUBuffer): void {
+    this.pool.release(buffer);
   }
 
   /** Reset all KV caches (for new generation) */

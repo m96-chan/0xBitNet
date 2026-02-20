@@ -144,6 +144,9 @@ export class BitNet {
         topK
       );
 
+      // Release the logits buffer back to the pool to prevent memory leak
+      this.model.releaseBuffer(logits);
+
       if (nextToken === this.tokenizer.eosTokenId) {
         break;
       }
@@ -175,11 +178,10 @@ export class BitNet {
     });
 
     const encoder = this.device.createCommandEncoder();
-    const srcOffset =
-      Math.max(0, logitsBuffer.size - vocabSize * 4);
+    // model.forward() now always returns [1, V] logits (last token only)
     encoder.copyBufferToBuffer(
       logitsBuffer,
-      srcOffset,
+      0,
       readBuffer,
       0,
       vocabSize * 4
