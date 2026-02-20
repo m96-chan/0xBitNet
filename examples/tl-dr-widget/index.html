@@ -233,6 +233,23 @@
       background: #2a1010;
       border-color: #f87171;
     }
+
+    .preset-badge {
+      font-size: 0.65rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 9999px;
+      background: #1a3a2a;
+      color: #4ade80;
+      font-weight: 500;
+      margin-left: 0.25rem;
+      vertical-align: middle;
+    }
+
+    .model-size {
+      font-size: 0.75rem;
+      color: #666;
+      margin-left: 0.25rem;
+    }
   </style>
 </head>
 <body>
@@ -249,11 +266,6 @@
 
     <div id="setup-section">
       <div id="cached-models"></div>
-      <input
-        type="text"
-        id="model-url"
-        placeholder="https://huggingface.co/.../model.gguf"
-      />
       <button class="btn btn-primary" id="load-btn">Load Model</button>
       <div id="status"></div>
     </div>
