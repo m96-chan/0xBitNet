@@ -4,7 +4,7 @@ import type { LoadProgress, ChatMessage } from "0xbitnet";
 const PRESET_MODELS = [
   {
     name: "BitNet 2B-4T",
-    url: "https://huggingface.co/m96-chan/bitnet-b1.58-2B-4T-gguf/resolve/main/bitnet-b1.58-2B-4T.gguf",
+    url: "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf",
     size: "~700 MB",
   },
 ];
