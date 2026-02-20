@@ -85,7 +85,7 @@ await deleteCachedModel("https://example.com/model.gguf");
 |-------|--------|------------|------|
 | [microsoft/bitnet-b1.58-2B-4T](https://huggingface.co/microsoft/BitNet-b1.58-2B-4T) | `BITNET_2B_4T_CONFIG` | 2B | ~1.5 GB |
 | [1bitLLM/bitnet_b1_58-large](https://huggingface.co/1bitLLM/bitnet_b1_58-large) | `BITNET_0_7B_CONFIG` | 0.7B | ~0.5 GB |
-| [HF1BitLLM/bitnet_b1_58-3B](https://huggingface.co/HF1BitLLM/bitnet_b1_58-3B) | `BITNET_3B_CONFIG` | 3B | ~2 GB |
+
 
 Third-party models using the I2_S ternary format (e.g., Falcon-Edge 1B/3B, Aramis-2B) are auto-detected from GGUF metadata. See [Model Compatibility](docs/model-compatibility.md) for details.
 

@@ -261,27 +261,6 @@ Config for [1bitLLM/bitnet_b1_58-large](https://huggingface.co/1bitLLM/bitnet_b1
 }
 ```
 
-### `BITNET_3B_CONFIG`
-
-Config for [HF1BitLLM/bitnet_b1_58-3B](https://huggingface.co/HF1BitLLM/bitnet_b1_58-3B).
-
-```typescript
-{
-  modelType: "bitnet",
-  vocabSize: 32002,
-  hiddenSize: 3200,
-  intermediateSize: 8640,
-  numHiddenLayers: 26,
-  numAttentionHeads: 32,
-  numKeyValueHeads: 32,
-  maxPositionEmbeddings: 2048,
-  rmsNormEps: 1e-6,
-  ropeTheta: 10000.0,
-  tieWordEmbeddings: false,
-  activation: "silu",
-}
-```
-
 ---
 
 ## Error Classes

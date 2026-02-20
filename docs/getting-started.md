@@ -10,7 +10,7 @@
 |-------|------------|-----------------|
 | bitnet_b1_58-large (0.7B) | 0.7B | ~0.5 GB |
 | bitnet-b1.58-2B-4T | 2B | ~1.5 GB |
-| bitnet_b1_58-3B | 3B | ~2 GB |
+
 
 ## Installation
 

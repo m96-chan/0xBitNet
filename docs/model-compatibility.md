@@ -8,7 +8,7 @@ These models have predefined configs in 0xBitNet and have been verified to work:
 |-------|-------------|--------|--------|------------|-----------------|
 | BitNet b1.58 2B-4T | [microsoft/BitNet-b1.58-2B-4T](https://huggingface.co/microsoft/BitNet-b1.58-2B-4T) | `BITNET_2B_4T_CONFIG` | 2B | ReLU² | Yes |
 | BitNet b1.58 Large | [1bitLLM/bitnet_b1_58-large](https://huggingface.co/1bitLLM/bitnet_b1_58-large) | `BITNET_0_7B_CONFIG` | 0.7B | SiLU | No |
-| BitNet b1.58 3B | [HF1BitLLM/bitnet_b1_58-3B](https://huggingface.co/HF1BitLLM/bitnet_b1_58-3B) | `BITNET_3B_CONFIG` | 3B | SiLU | No |
+
 
 ## Third-Party Models
 
