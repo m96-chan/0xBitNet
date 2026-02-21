@@ -1,0 +1,25 @@
+// swift-tools-version: 5.9
+
+import PackageDescription
+
+let package = Package(
+    name: "OxBitNet",
+    platforms: [
+        .macOS(.v13),
+        .iOS(.v16),
+    ],
+    products: [
+        .library(name: "OxBitNet", targets: ["OxBitNet"]),
+    ],
+    targets: [
+        .target(
+            name: "COxBitNet",
+            path: "packages/rust/crates/oxbitnet-swift/Sources/COxBitNet"
+        ),
+        .target(
+            name: "OxBitNet",
+            dependencies: ["COxBitNet"],
+            path: "packages/rust/crates/oxbitnet-swift/Sources/OxBitNet"
+        ),
+    ]
+)

@@ -100,3 +100,171 @@ jobs:
         working-directory: packages/core
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ── Swift (XCFramework → GitHub Release) ──
+  build-xcframework:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin,aarch64-apple-ios
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/rust
+
+      - name: Build static libs
+        working-directory: packages/rust
+        run: |
+          cargo build -p oxbitnet-ffi --release --target aarch64-apple-darwin
+          cargo build -p oxbitnet-ffi --release --target x86_64-apple-darwin
+          cargo build -p oxbitnet-ffi --release --target aarch64-apple-ios
+
+      - name: Create universal macOS binary
+        run: |
+          lipo -create \
+            packages/rust/target/aarch64-apple-darwin/release/liboxbitnet_ffi.a \
+            packages/rust/target/x86_64-apple-darwin/release/liboxbitnet_ffi.a \
+            -output liboxbitnet_ffi-macos.a
+
+      - name: Assemble XCFramework
+        run: |
+          HEADER_DIR=packages/rust/crates/oxbitnet-swift/Sources/COxBitNet/include
+
+          # macOS framework
+          mkdir -p macos/Headers
+          cp liboxbitnet_ffi-macos.a macos/liboxbitnet_ffi.a
+          cp "$HEADER_DIR/oxbitnet.h" macos/Headers/
+          cp "$HEADER_DIR/module.modulemap" macos/Headers/
+
+          # iOS framework
+          mkdir -p ios/Headers
+          cp packages/rust/target/aarch64-apple-ios/release/liboxbitnet_ffi.a ios/liboxbitnet_ffi.a
+          cp "$HEADER_DIR/oxbitnet.h" ios/Headers/
+          cp "$HEADER_DIR/module.modulemap" ios/Headers/
+
+          xcodebuild -create-xcframework \
+            -library macos/liboxbitnet_ffi.a -headers macos/Headers \
+            -library ios/liboxbitnet_ffi.a -headers ios/Headers \
+            -output OxBitNet.xcframework
+
+      - name: Package XCFramework
+        run: |
+          zip -r OxBitNet.xcframework.zip OxBitNet.xcframework
+          shasum -a 256 OxBitNet.xcframework.zip > OxBitNet.xcframework.zip.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xcframework
+          path: |
+            OxBitNet.xcframework.zip
+            OxBitNet.xcframework.zip.sha256
+
+  create-release:
+    needs: build-xcframework
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: xcframework
+          path: release-assets
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          gh release create "$TAG" --generate-notes \
+            release-assets/OxBitNet.xcframework.zip \
+            release-assets/OxBitNet.xcframework.zip.sha256 \
+          || gh release upload "$TAG" --clobber \
+            release-assets/OxBitNet.xcframework.zip \
+            release-assets/OxBitNet.xcframework.zip.sha256
+
+  # ── Java (Maven Central) ──
+  build-java-natives:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            classifier: linux-x86_64
+            lib: liboxbitnet_java.so
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            classifier: macos-aarch64
+            lib: liboxbitnet_java.dylib
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            classifier: macos-x86_64
+            lib: liboxbitnet_java.dylib
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            classifier: windows-x86_64
+            lib: oxbitnet_java.dll
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/rust
+
+      - name: Build native library
+        working-directory: packages/rust
+        run: cargo build -p oxbitnet-java --release --target ${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: java-native-${{ matrix.classifier }}
+          path: packages/rust/target/${{ matrix.target }}/release/${{ matrix.lib }}
+
+  publish-maven:
+    needs: build-java-natives
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Download native libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: java-native-*
+          path: native-tmp
+
+      - name: Bundle natives into resources
+        run: |
+          JAVA_DIR=packages/rust/crates/oxbitnet-java/java
+          for dir in native-tmp/java-native-*; do
+            CLASSIFIER=$(basename "$dir" | sed 's/java-native-//')
+            DEST="$JAVA_DIR/src/main/resources/META-INF/native/$CLASSIFIER"
+            mkdir -p "$DEST"
+            cp "$dir"/* "$DEST/"
+          done
+
+      - name: Publish to Maven Central
+        working-directory: packages/rust/crates/oxbitnet-java/java
+        run: ./gradlew publish
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
