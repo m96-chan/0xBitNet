@@ -27,7 +27,7 @@
 ## Highlights
 
 - **Pure WebGPU** — Custom WGSL kernels for ternary matrix operations (no WASM, no server)
-- **Multi-language** — TypeScript (`0xbitnet`), Rust (`oxbitnet`), Python (`oxbitnet`), Java/Android (`oxbitnet-java`), C (`oxbitnet-ffi`)
+- **Multi-language** — TypeScript (`0xbitnet`), Rust (`oxbitnet`), Python (`oxbitnet`), Swift (`OxBitNet`), Java/Android (`oxbitnet-java`), C (`oxbitnet-ffi`)
 - **Cross-platform** — Browsers, Node.js, Deno, native apps via wgpu
 - **Chat templates** — Built-in LLaMA 3 chat message formatting
 - **Automatic caching** — IndexedDB (browser) / disk cache (native)
@@ -92,6 +92,20 @@ model.chat(
     on_token=lambda t: print(t, end="", flush=True),
     temperature=0.7,
 )
+
+model.dispose()
+```
+
+### Swift
+
+```swift
+import OxBitNet
+
+let model = try await BitNet.load("model.gguf")
+
+for try await token in model.chat([.user("Hello!")], options: .init(temperature: 0.7)) {
+    print(token, terminator: "")
+}
 
 model.dispose()
 ```
@@ -165,6 +179,7 @@ More models are planned — see [#1](https://github.com/m96-chan/0xBitNet/issues
 | TypeScript / JS | [`0xbitnet`](https://www.npmjs.com/package/0xbitnet) | `npm install 0xbitnet` |
 | Rust | [`oxbitnet`](https://crates.io/crates/oxbitnet) | `cargo add oxbitnet` |
 | Python | [`oxbitnet`](https://pypi.org/project/oxbitnet/) | `pip install oxbitnet` |
+| Swift / iOS | `OxBitNet` | Swift Package Manager (see [oxbitnet-swift](packages/rust/crates/oxbitnet-swift/)) |
 | Java / Android | `oxbitnet-java` | `cargo build -p oxbitnet-java --release` |
 | C / FFI | `oxbitnet-ffi` | `cargo build -p oxbitnet-ffi --release` |
 
@@ -197,6 +212,16 @@ More models are planned — see [#1](https://github.com/m96-chan/0xBitNet/issues
 | `model.generate(prompt, on_token)` | Generate with streaming callback |
 | `model.generate_sync(prompt)` | Generate, return full string |
 | `model.dispose()` | Release all GPU resources |
+
+### Swift
+
+| Method | Description |
+|--------|-------------|
+| `BitNet.load(source, options:)` | Load a GGUF model (async) |
+| `BitNet.loadSync(source, options:)` | Load a GGUF model (blocking) |
+| `model.generate(prompt, options:)` | Stream tokens as `AsyncThrowingStream<String, Error>` |
+| `model.chat(messages, options:)` | Chat with streaming via `AsyncThrowingStream` |
+| `model.dispose()` | Release all GPU resources (also called by `deinit`) |
 
 ### Java
 
@@ -274,6 +299,17 @@ pip install oxbitnet
 python packages/rust/crates/oxbitnet-python/examples/chat.py
 ```
 
+### Swift CLI
+
+Minimal Swift chat example wrapping the C FFI layer.
+
+```bash
+cd packages/rust
+cargo build -p oxbitnet-ffi --release
+cd crates/oxbitnet-swift
+swift run -Xlinker -L../../../../target/release Chat model.gguf "Hello!"
+```
+
 ### Java CLI
 
 Minimal Java chat example using JNI bindings.
@@ -313,6 +349,7 @@ LD_LIBRARY_PATH=target/release ./chat model.gguf "Hello!"
 │       └── crates/
 │           ├── oxbitnet/           # Rust library (crates.io: oxbitnet)
 │           ├── oxbitnet-python/    # Python bindings via PyO3 (PyPI: oxbitnet)
+│           ├── oxbitnet-swift/     # Swift bindings via C FFI (SPM package)
 │           ├── oxbitnet-java/      # Java/JNI bindings (Android-ready)
 │           └── oxbitnet-ffi/       # C FFI bindings (cdylib + staticlib)
 ├── examples/
@@ -328,6 +365,7 @@ See [Architecture](docs/architecture.md) for data flow and internals.
 
 - **TypeScript/JS**: Node.js 18+, a WebGPU-capable environment
 - **Rust**: Rust 1.75+, a Vulkan/Metal/DX12-capable GPU
+- **Swift**: Swift 5.9+, a Vulkan/Metal/DX12-capable GPU
 - **Java**: JDK 17+, a Vulkan/Metal/DX12-capable GPU
 - **Python**: Python 3.9+, `pip install oxbitnet`
 
