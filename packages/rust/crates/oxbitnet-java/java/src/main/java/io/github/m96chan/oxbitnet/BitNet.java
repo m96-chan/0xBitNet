@@ -21,7 +21,7 @@ import java.util.List;
 public class BitNet implements AutoCloseable {
 
     static {
-        System.loadLibrary("oxbitnet_java");
+        NativeLoader.load("oxbitnet_java");
     }
 
     private long nativeHandle;
