@@ -58,31 +58,35 @@ fn main(
   for (var kt = 0u; kt < k_tiles; kt++) {
     let k_base = kt * TILE_K;
 
-    // Cooperatively load weight tile into shared memory
+    // Cooperatively load weight tile into shared memory (batch unpack: 1 u32 → 4 elements)
+    // TILE_K=32 matches the I2_S group size, so within a K-tile all elements share
+    // the same block and group — only gp varies 0..31. Each u32 holds 4 bytes (4 gp values).
     let linear_id = tid_m * THREADS_N + tid_n;
-    let load_count = (TILE_M * TILE_K) / (THREADS_M * THREADS_N);
-    for (var ld = 0u; ld < load_count; ld++) {
-      let idx = linear_id + ld * (THREADS_M * THREADS_N);
-      let local_row = idx / TILE_K;
-      let local_col = idx % TILE_K;
-      let global_row = wg_row + local_row;
-      let global_k = k_base + local_col;
+    let block = k_base / 128u;
+    let group = (k_base % 128u) / 32u;
+    let group_shift = 6u - 2u * group;
 
-      var w_val: i32 = 0;
-      if (global_row < params.M && global_k < params.K) {
-        // I2_S 128-element block interleaving
-        let block = global_k / 128u;
-        let pos = global_k % 128u;
-        let group = pos / 32u;
-        let gp = pos % 32u;
-        let u32_idx = block * 8u + gp / 4u;
-        let byte_in_u32 = gp % 4u;
-        let shift = byte_in_u32 * 8u + (6u - 2u * group);
-        let packed = weights[global_row * params.K_packed + u32_idx];
-        let code = (packed >> shift) & 3u;
-        w_val = i32(code) - 1;
+    // 64 rows × 8 u32/row = 512 u32s total, 256 threads → 2 loads each
+    for (var ld = 0u; ld < 2u; ld++) {
+      let flat_idx = linear_id + ld * 256u;
+      let local_row = flat_idx / 8u;
+      let u32_in_row = flat_idx % 8u;
+      let base_gp = u32_in_row * 4u;
+      let global_row = wg_row + local_row;
+
+      var w0: i32 = 0; var w1: i32 = 0; var w2: i32 = 0; var w3: i32 = 0;
+      if (global_row < params.M && k_base < params.K) {
+        let packed = weights[global_row * params.K_packed + block * 8u + u32_in_row];
+        w0 = i32((packed >> group_shift) & 3u) - 1;
+        w1 = i32((packed >> (8u + group_shift)) & 3u) - 1;
+        w2 = i32((packed >> (16u + group_shift)) & 3u) - 1;
+        w3 = i32((packed >> (24u + group_shift)) & 3u) - 1;
       }
-      shared_w[local_row * TILE_K + local_col] = w_val;
+      let sm_base = local_row * TILE_K + base_gp;
+      shared_w[sm_base]      = w0;
+      shared_w[sm_base + 1u] = w1;
+      shared_w[sm_base + 2u] = w2;
+      shared_w[sm_base + 3u] = w3;
     }
 
     // Cooperatively load input tile into shared memory
