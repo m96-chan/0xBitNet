@@ -10,7 +10,6 @@
   <a href="https://www.npmjs.com/package/0xbitnet"><img src="https://img.shields.io/npm/v/0xbitnet" alt="npm"></a>
   <a href="https://crates.io/crates/oxbitnet"><img src="https://img.shields.io/crates/v/oxbitnet" alt="crates.io"></a>
   <a href="https://pypi.org/project/oxbitnet/"><img src="https://img.shields.io/pypi/v/oxbitnet" alt="PyPI"></a>
-  <a href="https://central.sonatype.com/artifact/io.github.m96-chan/OxBitNet"><img src="https://img.shields.io/maven-central/v/io.github.m96-chan/OxBitNet" alt="Maven Central"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/m96-chan/0xBitNet" alt="License"></a>
 </p>
 
