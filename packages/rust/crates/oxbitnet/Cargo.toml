@@ -1,6 +1,6 @@
 [package]
 name = "oxbitnet"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 description = "Run BitNet b1.58 ternary LLMs with wgpu"
 license = "MIT"

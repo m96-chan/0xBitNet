@@ -1,6 +1,6 @@
 {
   "name": "0xbitnet",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Run BitNet b1.58 ternary LLMs with WebGPU",
   "type": "module",
   "main": "./dist/index.cjs",

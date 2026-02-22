@@ -6,8 +6,42 @@ on:
       - "v*"  # e.g. v0.2.1
 
 jobs:
+  # ── version consistency check ──
+  version-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify version consistency
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          echo "Tag version: $TAG"
+          ERRORS=0
+          check() {
+            local file=$1 ver=$2
+            if [ "$ver" != "$TAG" ]; then
+              echo "::error file=$file::Version mismatch: $ver (expected $TAG)"
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "✓ $file: $ver"
+            fi
+          }
+          check packages/core/package.json \
+            "$(node -p "require('./packages/core/package.json').version")"
+          for toml in packages/rust/crates/oxbitnet/Cargo.toml \
+                      packages/rust/crates/oxbitnet-ffi/Cargo.toml \
+                      packages/rust/crates/oxbitnet-java/Cargo.toml \
+                      packages/rust/crates/oxbitnet-python/Cargo.toml; do
+            check "$toml" "$(grep -m1 '^version' "$toml" | sed 's/.*"\(.*\)"/\1/')"
+          done
+          check packages/rust/crates/oxbitnet-python/pyproject.toml \
+            "$(grep -m1 '^version' packages/rust/crates/oxbitnet-python/pyproject.toml | sed 's/.*"\(.*\)"/\1/')"
+          check packages/rust/crates/oxbitnet-java/java/build.gradle.kts \
+            "$(grep -m1 '^version' packages/rust/crates/oxbitnet-java/java/build.gradle.kts | sed 's/.*"\(.*\)"/\1/')"
+          exit $ERRORS
+
   # ── crates.io ──
   publish-crate:
+    needs: version-check
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -27,6 +61,7 @@ jobs:
 
   # ── PyPI (maturin) ──
   build-wheels:
+    needs: version-check
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.os }}
     strategy:
@@ -78,6 +113,7 @@ jobs:
 
   # ── npm ──
   publish-npm:
+    needs: version-check
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -103,6 +139,7 @@ jobs:
 
   # ── Swift (XCFramework → GitHub Release) ──
   build-xcframework:
+    needs: version-check
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: macos-latest
     steps:
@@ -190,6 +227,7 @@ jobs:
 
   # ── Java (Maven Central) ──
   build-java-natives:
+    needs: version-check
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.os }}
     strategy:

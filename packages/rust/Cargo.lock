@@ -1696,7 +1696,7 @@ dependencies = [
 
 [[package]]
 name = "oxbitnet"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "ahash",
  "async-stream",
@@ -1720,7 +1720,7 @@ dependencies = [
 
 [[package]]
 name = "oxbitnet-ffi"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "cbindgen",
  "futures",
@@ -1732,7 +1732,7 @@ dependencies = [
 
 [[package]]
 name = "oxbitnet-java"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "futures",
  "jni",
@@ -1742,7 +1742,7 @@ dependencies = [
 
 [[package]]
 name = "oxbitnet-python"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "futures",
  "oxbitnet",
