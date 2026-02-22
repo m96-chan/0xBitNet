@@ -1,5 +1,5 @@
 import { PipelineManager } from "../gpu/pipeline.js";
-import { BufferPool } from "../gpu/buffer-pool.js";
+import { BufferPool, createUniformBuffer } from "../gpu/buffer-pool.js";
 import { type BindGroupCache, createBGCache, clearBGCache, cachedBG } from "./bg-cache.js";
 import type { ModelConfig } from "../types.js";
 
@@ -73,14 +73,14 @@ export class BitLinear {
       v.setUint32(0, 1, true);
       v.setUint32(4, this.inDim, true);
       v.setFloat32(8, 1e-5, true);
-      this.decodeNormUniform = this.createUniformBuffer(data);
+      this.decodeNormUniform = createUniformBuffer(this.device, data);
     }
     {
       const data = new ArrayBuffer(8);
       const v = new DataView(data);
       v.setUint32(0, 1, true);
       v.setUint32(4, this.inDim, true);
-      this.decodeQuantUniform = this.createUniformBuffer(data);
+      this.decodeQuantUniform = createUniformBuffer(this.device, data);
     }
     {
       const data = new ArrayBuffer(12);
@@ -88,7 +88,7 @@ export class BitLinear {
       v.setUint32(0, this.outDim, true);
       v.setUint32(4, this.inDim, true);
       v.setUint32(8, this.kPacked, true);
-      this.decodeGemvParamsUniform = this.createUniformBuffer(data);
+      this.decodeGemvParamsUniform = createUniformBuffer(this.device, data);
     }
     this.decodeGemvScaleUniform = this.device.createBuffer({
       size: 4,
@@ -196,7 +196,7 @@ export class BitLinear {
       paramsView.setUint32(0, N, true);
       paramsView.setUint32(4, this.inDim, true);
       paramsView.setFloat32(8, 1e-5, true);
-      paramsBuffer = this.createUniformBuffer(paramsData);
+      paramsBuffer = createUniformBuffer(this.device, paramsData);
     }
 
     const entries: GPUBindGroupEntry[] = [
@@ -243,7 +243,7 @@ export class BitLinear {
       const paramsView = new DataView(paramsData);
       paramsView.setUint32(0, N, true);
       paramsView.setUint32(4, this.inDim, true);
-      paramsBuffer = this.createUniformBuffer(paramsData);
+      paramsBuffer = createUniformBuffer(this.device, paramsData);
     }
 
     const entries: GPUBindGroupEntry[] = [
@@ -285,8 +285,8 @@ export class BitLinear {
       paramsView.setUint32(0, this.outDim, true);
       paramsView.setUint32(4, this.inDim, true);
       paramsView.setUint32(8, this.kPacked, true);
-      paramsBuffer = this.createUniformBuffer(paramsData);
-      inputScaleBuffer = this.createUniformBuffer(new ArrayBuffer(4));
+      paramsBuffer = createUniformBuffer(this.device, paramsData);
+      inputScaleBuffer = createUniformBuffer(this.device, new ArrayBuffer(4));
     }
     // Copy from inputScales[0] to uniform
     encoder.copyBufferToBuffer(inputScales, 0, inputScaleBuffer, 0, 4);
@@ -333,7 +333,7 @@ export class BitLinear {
       this.device.queue.writeBuffer(this.prefillGemmUniform, 0, new Uint8Array(paramsData));
       paramsBuffer = this.prefillGemmUniform;
     } else {
-      paramsBuffer = this.createUniformBuffer(paramsData);
+      paramsBuffer = createUniformBuffer(this.device, paramsData);
     }
 
     const bindGroup = this.device.createBindGroup({
@@ -363,15 +363,4 @@ export class BitLinear {
     clearBGCache(this.bgCache);
   }
 
-  private createUniformBuffer(data: ArrayBuffer): GPUBuffer {
-    const size = Math.max(Math.ceil(data.byteLength / 4) * 4, 4);
-    const buffer = this.device.createBuffer({
-      size,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: true,
-    });
-    new Uint8Array(buffer.getMappedRange()).set(new Uint8Array(data));
-    buffer.unmap();
-    return buffer;
-  }
 }

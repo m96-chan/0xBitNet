@@ -1,5 +1,5 @@
 import { PipelineManager } from "../gpu/pipeline.js";
-import { BufferPool } from "../gpu/buffer-pool.js";
+import { BufferPool, createUniformBuffer } from "../gpu/buffer-pool.js";
 import { Attention } from "./attention.js";
 import { FFN } from "./ffn.js";
 import { type BindGroupCache, createBGCache, clearBGCache, cachedBG } from "./bg-cache.js";
@@ -65,14 +65,14 @@ export class TransformerBlock {
       v.setUint32(0, 1, true);
       v.setUint32(4, this.config.hiddenSize, true);
       v.setFloat32(8, this.config.rmsNormEps, true);
-      this.decodeNormUniform = this.createUniform(data);
+      this.decodeNormUniform = createUniformBuffer(this.device, data);
     }
     {
       const data = new ArrayBuffer(8);
       const v = new DataView(data);
       v.setUint32(0, this.config.hiddenSize, true);
       v.setUint32(4, 0, true); // add
-      this.decodeAddUniform = this.createUniform(data);
+      this.decodeAddUniform = createUniformBuffer(this.device, data);
     }
 
     // Prefill uniforms (reused via writeBuffer for N>1)
@@ -185,7 +185,7 @@ export class TransformerBlock {
       v.setUint32(0, N, true);
       v.setUint32(4, hidden, true);
       v.setFloat32(8, this.config.rmsNormEps, true);
-      paramsBuffer = this.createUniform(paramsData);
+      paramsBuffer = createUniformBuffer(this.device, paramsData);
     }
 
     const entries: GPUBindGroupEntry[] = [
@@ -240,7 +240,7 @@ export class TransformerBlock {
       const v = new DataView(paramsData);
       v.setUint32(0, numElements, true);
       v.setUint32(4, 0, true); // add
-      paramsBuffer = this.createUniform(paramsData);
+      paramsBuffer = createUniformBuffer(this.device, paramsData);
     }
 
     const entries: GPUBindGroupEntry[] = [
@@ -274,15 +274,4 @@ export class TransformerBlock {
     this.attention.destroyPreAllocated();
   }
 
-  private createUniform(data: ArrayBuffer): GPUBuffer {
-    const size = Math.max(Math.ceil(data.byteLength / 4) * 4, 4);
-    const buffer = this.device.createBuffer({
-      size,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: true,
-    });
-    new Uint8Array(buffer.getMappedRange()).set(new Uint8Array(data));
-    buffer.unmap();
-    return buffer;
-  }
 }

@@ -1,5 +1,18 @@
 import type { BufferEntry } from "../types.js";
 
+/** Create a GPU uniform buffer from an ArrayBuffer, with mappedAtCreation. */
+export function createUniformBuffer(device: GPUDevice, data: ArrayBuffer): GPUBuffer {
+  const size = Math.max(Math.ceil(data.byteLength / 4) * 4, 4);
+  const buffer = device.createBuffer({
+    size,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    mappedAtCreation: true,
+  });
+  new Uint8Array(buffer.getMappedRange()).set(new Uint8Array(data));
+  buffer.unmap();
+  return buffer;
+}
+
 /**
  * GPU buffer pool for reusing temporary compute buffers.
  * Reduces allocation churn during inference by recycling buffers

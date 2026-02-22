@@ -1,5 +1,5 @@
 import { PipelineManager } from "../gpu/pipeline.js";
-import { BufferPool } from "../gpu/buffer-pool.js";
+import { BufferPool, createUniformBuffer } from "../gpu/buffer-pool.js";
 import { TransformerBlock } from "./transformer.js";
 import { BitLinear } from "./bitlinear.js";
 import { Attention, createKVCache } from "./attention.js";
@@ -274,7 +274,7 @@ export class BitNetModel {
       v.setUint32(0, 1, true);
       v.setUint32(4, this.config.hiddenSize, true);
       v.setUint32(8, this.config.vocabSize, true);
-      this.decodeEmbeddingUniform = this.createUniform(data);
+      this.decodeEmbeddingUniform = createUniformBuffer(this.device, data);
     }
 
     // Final norm uniform (static for N=1)
@@ -284,7 +284,7 @@ export class BitNetModel {
       v.setUint32(0, 1, true);
       v.setUint32(4, this.config.hiddenSize, true);
       v.setFloat32(8, this.config.rmsNormEps, true);
-      this.decodeFinalNormUniform = this.createUniform(data);
+      this.decodeFinalNormUniform = createUniformBuffer(this.device, data);
     }
 
     // LM head uniform (static for N=1, only for tied embedding path)
@@ -294,7 +294,7 @@ export class BitNetModel {
       v.setUint32(0, 1, true);
       v.setUint32(4, this.config.vocabSize, true);
       v.setUint32(8, this.config.hiddenSize, true);
-      this.decodeLMHeadUniform = this.createUniform(data);
+      this.decodeLMHeadUniform = createUniformBuffer(this.device, data);
     }
 
     // Prefill uniforms (reused via writeBuffer for N>1)
@@ -613,7 +613,7 @@ export class BitNetModel {
       v.setUint32(0, N, true);
       v.setUint32(4, this.config.hiddenSize, true);
       v.setUint32(8, this.config.vocabSize, true);
-      paramsBuffer = this.createUniform(paramsData);
+      paramsBuffer = createUniformBuffer(this.device, paramsData);
     }
 
     const entries: GPUBindGroupEntry[] = [
@@ -668,7 +668,7 @@ export class BitNetModel {
       v.setUint32(0, N, true);
       v.setUint32(4, this.config.hiddenSize, true);
       v.setFloat32(8, this.config.rmsNormEps, true);
-      paramsBuffer = this.createUniform(paramsData);
+      paramsBuffer = createUniformBuffer(this.device, paramsData);
     }
 
     const entries: GPUBindGroupEntry[] = [
@@ -726,7 +726,7 @@ export class BitNetModel {
       v.setUint32(0, N, true);
       v.setUint32(4, V, true);
       v.setUint32(8, D, true);
-      paramsBuffer = this.createUniform(paramsData);
+      paramsBuffer = createUniformBuffer(this.device, paramsData);
     }
 
     const weight = weightBuffer ?? this.embedTokens;
@@ -753,15 +753,4 @@ export class BitNetModel {
     return output;
   }
 
-  private createUniform(data: ArrayBuffer): GPUBuffer {
-    const size = Math.max(Math.ceil(data.byteLength / 4) * 4, 4);
-    const buffer = this.device.createBuffer({
-      size,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: true,
-    });
-    new Uint8Array(buffer.getMappedRange()).set(new Uint8Array(data));
-    buffer.unmap();
-    return buffer;
-  }
 }

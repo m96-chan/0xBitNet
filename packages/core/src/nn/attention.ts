@@ -1,5 +1,5 @@
 import { PipelineManager } from "../gpu/pipeline.js";
-import { BufferPool } from "../gpu/buffer-pool.js";
+import { BufferPool, createUniformBuffer } from "../gpu/buffer-pool.js";
 import { BitLinear } from "./bitlinear.js";
 import { type BindGroupCache, createBGCache, clearBGCache, cachedBG } from "./bg-cache.js";
 import type { ModelConfig, KVCache } from "../types.js";
@@ -236,7 +236,7 @@ export class Attention {
       this.device.queue.writeBuffer(uniformBuf, 0, new Uint8Array(paramsData));
       paramsBuffer = uniformBuf;
     } else {
-      paramsBuffer = this.createUniform(paramsData);
+      paramsBuffer = createUniformBuffer(this.device, paramsData);
     }
 
     const entries: GPUBindGroupEntry[] = [
@@ -308,7 +308,7 @@ export class Attention {
       this.device.queue.writeBuffer(uniformBuf, 0, new Uint8Array(paramsData));
       paramsBuffer = uniformBuf;
     } else {
-      paramsBuffer = this.createUniform(paramsData);
+      paramsBuffer = createUniformBuffer(this.device, paramsData);
     }
 
     const entries: GPUBindGroupEntry[] = [
@@ -362,7 +362,7 @@ export class Attention {
       this.device.queue.writeBuffer(uniformBuf, 0, new Uint8Array(paramsData));
       paramsBuffer = uniformBuf;
     } else {
-      paramsBuffer = this.createUniform(paramsData);
+      paramsBuffer = createUniformBuffer(this.device, paramsData);
     }
 
     const entries: GPUBindGroupEntry[] = [
@@ -417,7 +417,7 @@ export class Attention {
       this.device.queue.writeBuffer(uniformBuf, 0, new Uint8Array(paramsData));
       paramsBuffer = uniformBuf;
     } else {
-      paramsBuffer = this.createUniform(paramsData);
+      paramsBuffer = createUniformBuffer(this.device, paramsData);
     }
 
     const entries: GPUBindGroupEntry[] = [
@@ -457,17 +457,6 @@ export class Attention {
     this.decodeAttnWeightsBuf = undefined;
   }
 
-  private createUniform(data: ArrayBuffer): GPUBuffer {
-    const size = Math.max(Math.ceil(data.byteLength / 4) * 4, 4);
-    const buffer = this.device.createBuffer({
-      size,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: true,
-    });
-    new Uint8Array(buffer.getMappedRange()).set(new Uint8Array(data));
-    buffer.unmap();
-    return buffer;
-  }
 }
 
 /** Allocate a fresh KV cache for a given config and max sequence length */
