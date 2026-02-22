@@ -183,9 +183,10 @@ export class BitNet {
     this.model.resetKVCache();
 
     const eotId = this.tokenizer.eotTokenId;
+    const imEndId = this.tokenizer.imEndTokenId;
     const recentTokens: number[] = [];
 
-    console.debug(`[0xBitNet] generate: ${inputIds.length} input tokens, eotId=${eotId}, temp=${temperature}, topK=${topK}, repeatPenalty=${repeatPenalty}`);
+    console.debug(`[0xBitNet] generate: ${inputIds.length} input tokens, eotId=${eotId}, imEndId=${imEndId}, temp=${temperature}, topK=${topK}, repeatPenalty=${repeatPenalty}`);
     console.debug(`[0xBitNet] first 20 token IDs:`, Array.from(inputIds.slice(0, 20)));
 
     // Prefill
@@ -208,7 +209,7 @@ export class BitNet {
       // Release the logits buffer back to the pool to prevent memory leak
       this.model.releaseBuffer(logits);
 
-      if (nextToken === this.tokenizer.eosTokenId || nextToken === eotId) {
+      if (nextToken === this.tokenizer.eosTokenId || nextToken === eotId || nextToken === imEndId) {
         break;
       }
 

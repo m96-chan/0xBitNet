@@ -7,6 +7,21 @@ const PRESET_MODELS = [
     url: "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf",
     size: "~700 MB",
   },
+  {
+    name: "Falcon-E 1B",
+    url: "https://huggingface.co/tiiuae/Falcon-E-1B-GGUF/resolve/main/Falcon-E-1B.i2_s.gguf",
+    size: "~400 MB",
+  },
+  {
+    name: "Falcon-E 3B",
+    url: "https://huggingface.co/tiiuae/Falcon-E-3B-GGUF/resolve/main/Falcon-E-3B.i2_s.gguf",
+    size: "~700 MB",
+  },
+  {
+    name: "BitNet 0.7B",
+    url: "https://huggingface.co/1bitLLM/bitnet_b1_58-large/resolve/main/ggml-model-i2_s.gguf",
+    size: "~200 MB",
+  },
 ];
 
 // DOM elements

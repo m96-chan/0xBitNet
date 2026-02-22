@@ -141,6 +141,11 @@ async function loadGGUF(
         // sharding on GPUs with maxStorageBufferBindingSize ≤ 1GB.
         // Critical: BOS token ID 128000 falls outside 1GB shard range in F32!
         store.uploadSharded(hfName, tensorData, maxBinding);
+      } else if (hfName === "lm_head.weight") {
+        // F16 untied LM head (e.g., Falcon-E): keep as raw F16 like embeddings,
+        // reuse the f32_matmul shader path that decodes F16 via unpack2x16float.
+        store.uploadSharded(hfName, tensorData, maxBinding);
+        config.lmHeadF16 = true;
       } else {
         // Other F16 tensors (e.g., norm weights): convert to F32 for standard shaders
         const f32 = convertF16ToF32(new Uint16Array(tensorData), numElements);
@@ -259,10 +264,13 @@ function createDummyScales(
       { name: `${p}.mlp.gate_proj.weight_scale`, dim: config.intermediateSize },
     );
   }
-  scaleNames.push({
-    name: "lm_head.weight_scale",
-    dim: config.vocabSize,
-  });
+  // F16 lm_head doesn't need a ternary weight scale
+  if (!config.lmHeadF16) {
+    scaleNames.push({
+      name: "lm_head.weight_scale",
+      dim: config.vocabSize,
+    });
+  }
 
   for (const { name, dim } of scaleNames) {
     if (!store.has(name)) {
@@ -329,7 +337,9 @@ function configFromGGUFMetadata(
     128256;
   const intermediateSize = (get("feed_forward_length") as number) ?? 6912;
 
-  const isOfficial = vocabSize > 100000 || arch.includes("bitnet");
+  // Only BitNet 2B-4T (arch="bitnet-25") and derivatives use relu²
+  const activation = arch === "bitnet-25" ? "relu2" : "silu";
+  const ropeTheta = (get("rope.freq_base") as number) ?? (arch === "bitnet-25" ? 500000.0 : 10000.0);
 
   return {
     modelType: "bitnet",
@@ -341,9 +351,9 @@ function configFromGGUFMetadata(
     numKeyValueHeads: numKVHeads,
     maxPositionEmbeddings: (get("context_length") as number) ?? 4096,
     rmsNormEps: (get("attention.layer_norm_rms_epsilon") as number) ?? 1e-5,
-    ropeTheta: (get("rope.freq_base") as number) ?? (isOfficial ? 500000.0 : 10000.0),
+    ropeTheta,
     tieWordEmbeddings: false,
-    activation: isOfficial ? "relu2" : "silu",
+    activation,
   };
 }
 
@@ -380,8 +390,6 @@ function configFromSafetensors(
   const headDim = hiddenSize / numHeads;
   const numKVHeads = kvDim / headDim;
 
-  const isOfficial = vocabSize > 100000;
-
   return {
     modelType: "bitnet",
     vocabSize,
@@ -392,9 +400,9 @@ function configFromSafetensors(
     numKeyValueHeads: numKVHeads,
     maxPositionEmbeddings: 4096,
     rmsNormEps: 1e-5,
-    ropeTheta: isOfficial ? 500000.0 : 10000.0,
+    ropeTheta: 10000.0,
     tieWordEmbeddings: false,
-    activation: isOfficial ? "relu2" : "silu",
+    activation: "silu",
   };
 }
 

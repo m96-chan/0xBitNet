@@ -210,24 +210,37 @@ export class Tokenizer {
     return this.vocab.get("<|eot_id|>");
   }
 
+  /** Returns the vocab ID for `<|im_end|>`, or undefined if not present. */
+  get imEndTokenId(): number | undefined {
+    return this.vocab.get("<|im_end|>");
+  }
+
   /**
-   * Apply the LLaMA 3 chat template to a list of messages.
-   * Returns token IDs ready for model input, with a trailing assistant header.
-   * Falls back to plain encode() if special tokens are missing.
+   * Apply the appropriate chat template to a list of messages.
+   * Auto-detects ChatML vs LLaMA 3 format from vocab.
+   * Falls back to plain encode() if no special tokens are found.
    */
   applyChatTemplate(messages: ChatMessage[]): Uint32Array {
+    // Check for ChatML tokens first
+    const imStartId = this.vocab.get("<|im_start|>");
+    const imEndId = this.vocab.get("<|im_end|>");
+    if (imStartId !== undefined && imEndId !== undefined) {
+      return this.applyChatML(messages, imStartId, imEndId);
+    }
+
+    // Check for LLaMA 3 tokens
     const startHeaderId = this.vocab.get("<|start_header_id|>");
     const endHeaderId = this.vocab.get("<|end_header_id|>");
     const eotId = this.vocab.get("<|eot_id|>");
 
     // Fall back to plain encoding if special tokens aren't in vocab
     if (startHeaderId === undefined || endHeaderId === undefined || eotId === undefined) {
-      console.warn(`[0xBitNet] Chat template fallback: special tokens missing (start_header=${startHeaderId}, end_header=${endHeaderId}, eot=${eotId})`);
+      console.warn(`[0xBitNet] Chat template fallback: special tokens missing`);
       const text = messages.map((m) => m.content).join("\n");
       return this.encode(text);
     }
 
-    console.debug(`[0xBitNet] Chat template: start_header=${startHeaderId}, end_header=${endHeaderId}, eot=${eotId}`);
+    console.debug(`[0xBitNet] Chat template: LLaMA 3 (start_header=${startHeaderId}, end_header=${endHeaderId}, eot=${eotId})`);
 
     const tokens: number[] = [this.bosId];
 
@@ -245,6 +258,26 @@ export class Tokenizer {
     tokens.push(endHeaderId);
     tokens.push(...this.encode("\n\n", false));
 
+    return new Uint32Array(tokens);
+  }
+
+  /**
+   * Apply the ChatML template (used by Falcon-E and similar models).
+   * Format: <|im_start|>role\ncontent<|im_end|>\n
+   */
+  private applyChatML(messages: ChatMessage[], imStartId: number, imEndId: number): Uint32Array {
+    console.debug(`[0xBitNet] Chat template: ChatML (im_start=${imStartId}, im_end=${imEndId})`);
+
+    const tokens: number[] = [this.bosId];
+    for (const msg of messages) {
+      tokens.push(imStartId);
+      tokens.push(...this.encode(msg.role + "\n" + msg.content, false));
+      tokens.push(imEndId);
+      tokens.push(...this.encode("\n", false));
+    }
+    // Trailing assistant prompt
+    tokens.push(imStartId);
+    tokens.push(...this.encode("assistant\n", false));
     return new Uint32Array(tokens);
   }
 
