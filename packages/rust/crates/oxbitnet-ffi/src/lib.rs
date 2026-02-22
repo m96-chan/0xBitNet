@@ -431,22 +431,7 @@ pub unsafe extern "C" fn oxbitnet_generate(
     };
 
     let mut stream = bitnet.generate(prompt_str, gen_opts);
-
-    handle.runtime.block_on(async {
-        while let Some(token) = stream.next().await {
-            if let Some(cb) = callback {
-                let c_str = match CString::new(token) {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                };
-                let len = c_str.as_bytes().len();
-                let ret = unsafe { cb(c_str.as_ptr(), len, userdata) };
-                if ret != 0 {
-                    break;
-                }
-            }
-        }
-    });
+    drain_stream(&handle.runtime, &mut stream, callback, userdata);
 
     0
 }
@@ -531,22 +516,7 @@ pub unsafe extern "C" fn oxbitnet_chat(
     };
 
     let mut stream = bitnet.generate_chat(&chat_messages, gen_opts);
-
-    handle.runtime.block_on(async {
-        while let Some(token) = stream.next().await {
-            if let Some(cb) = callback {
-                let c_str = match CString::new(token) {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                };
-                let len = c_str.as_bytes().len();
-                let ret = unsafe { cb(c_str.as_ptr(), len, userdata) };
-                if ret != 0 {
-                    break;
-                }
-            }
-        }
-    });
+    drain_stream(&handle.runtime, &mut stream, callback, userdata);
 
     0
 }
@@ -573,6 +543,33 @@ pub extern "C" fn oxbitnet_error_message() -> *const c_char {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Consume a token stream, forwarding each token to the C callback.
+///
+/// Blocks the current thread on the provided runtime until the stream is
+/// exhausted or the callback returns non-zero.
+fn drain_stream(
+    runtime: &tokio::runtime::Runtime,
+    stream: &mut (impl futures::Stream<Item = String> + Unpin),
+    callback: OxBitNetTokenFn,
+    userdata: *mut std::ffi::c_void,
+) {
+    runtime.block_on(async {
+        while let Some(token) = stream.next().await {
+            if let Some(cb) = callback {
+                let c_str = match CString::new(token) {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
+                let len = c_str.as_bytes().len();
+                let ret = unsafe { cb(c_str.as_ptr(), len, userdata) };
+                if ret != 0 {
+                    break;
+                }
+            }
+        }
+    });
+}
 
 /// Read generate options from a C pointer, falling back to defaults if NULL.
 ///

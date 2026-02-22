@@ -59,18 +59,21 @@ fn main(
     let block = col / 8u;
     let base_gp = (col % 8u) * 4u;
 
-    // Unpack 16 ternary weights from this u32 and dot with input
-    for (var i = 0u; i < 16u; i++) {
-      let byte_in_u32 = i / 4u;
-      let group = i % 4u;
-      let gp = base_gp + byte_in_u32;
-      let k_idx = block * 128u + group * 32u + gp;
-      if (k_idx < params.K) {
-        let shift = byte_in_u32 * 8u + (6u - 2u * group);
-        let code = (packed >> shift) & 3u;
-        let w = i32(code) - 1;
-        acc += w * input[k_idx];
-      }
+    // Process byte-by-byte: 4 bytes per u32, each byte encodes 4 groups
+    for (var bi = 0u; bi < 4u; bi++) {
+      let byte_val = (packed >> (bi * 8u)) & 0xFFu;
+      let gp = base_gp + bi;
+      let base = block * 128u + gp;
+
+      let w0 = i32((byte_val >> 6u) & 3u) - 1;
+      let w1 = i32((byte_val >> 4u) & 3u) - 1;
+      let w2 = i32((byte_val >> 2u) & 3u) - 1;
+      let w3 = i32(byte_val & 3u) - 1;
+
+      acc += w0 * input[base]
+           + w1 * input[base + 32u]
+           + w2 * input[base + 64u]
+           + w3 * input[base + 96u];
     }
   }
 
