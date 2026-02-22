@@ -13,6 +13,8 @@ export interface ModelConfig {
   ropeTheta: number;
   tieWordEmbeddings: boolean;
   activation: "relu2" | "silu" | "swiglu";
+  /** True when lm_head.weight is F16 (not I2_S ternary) */
+  lmHeadF16?: boolean;
 }
 
 // ─── Weight Format ───

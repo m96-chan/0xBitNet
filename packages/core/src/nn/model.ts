@@ -217,6 +217,9 @@ export class BitNetModel {
     let lmHead: BitLinear | GPUBuffer;
     if (config.tieWordEmbeddings || !weights.has("lm_head.weight")) {
       lmHead = embedTokens;
+    } else if (config.lmHeadF16) {
+      // F16 untied head — use f32_matmul shader (same as tied path)
+      lmHead = requireWeight("lm_head.weight");
     } else {
       lmHead = new BitLinear(
         device,
@@ -368,8 +371,9 @@ export class BitNetModel {
     if (this.lmHead instanceof BitLinear) {
       logits = (this.lmHead as BitLinear).forward(lmInput, 1, encoder);
     } else {
-      // Tied embedding: simple matmul
-      logits = this.dispatchLMHead(encoder, lmInput, 1);
+      // Tied embedding or F16 untied head: f32_matmul shader
+      const weight = this.lmHead !== this.embedTokens ? this.lmHead : undefined;
+      logits = this.dispatchLMHead(encoder, lmInput, 1, weight);
     }
     if (N > 1) {
       this.pool.release(lmInput);
@@ -501,7 +505,8 @@ export class BitNetModel {
     if (this.lmHead instanceof BitLinear) {
       logits = (this.lmHead as BitLinear).forward(lmInput, 1, enc);
     } else {
-      logits = this.dispatchLMHead(enc, lmInput, 1);
+      const weight = this.lmHead !== this.embedTokens ? this.lmHead : undefined;
+      logits = this.dispatchLMHead(enc, lmInput, 1, weight);
     }
     this.device.queue.submit([enc.finish()]);
     results.push(await this.readDiag("logits_first100", logits, 100));
@@ -654,7 +659,8 @@ export class BitNetModel {
   private dispatchLMHead(
     encoder: GPUCommandEncoder,
     input: GPUBuffer,
-    N: number
+    N: number,
+    weightBuffer?: GPUBuffer
   ): GPUBuffer {
     const V = this.config.vocabSize;
     const D = this.config.hiddenSize;
@@ -681,9 +687,10 @@ export class BitNetModel {
       paramsBuffer = this.createUniform(paramsData);
     }
 
+    const weight = weightBuffer ?? this.embedTokens;
     const entries: GPUBindGroupEntry[] = [
       { binding: 0, resource: { buffer: input } },
-      { binding: 1, resource: { buffer: this.embedTokens } },
+      { binding: 1, resource: { buffer: weight } },
       { binding: 2, resource: { buffer: output } },
       { binding: 3, resource: { buffer: paramsBuffer } },
     ];
