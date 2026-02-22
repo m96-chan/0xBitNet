@@ -36,6 +36,11 @@ export class BitLinear {
   private decodeGemvParamsUniform?: GPUBuffer;
   private decodeGemvScaleUniform?: GPUBuffer;
 
+  // Pre-created uniform buffers for N>1 prefill (dynamic — updated via writeBuffer)
+  private prefillNormUniform?: GPUBuffer;
+  private prefillQuantUniform?: GPUBuffer;
+  private prefillGemmUniform?: GPUBuffer;
+
   // Bind group cache for N=1 decode
   private bgCache: BindGroupCache = createBGCache();
 
@@ -89,6 +94,18 @@ export class BitLinear {
       size: 4,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
+
+    // Prefill uniforms (reused via writeBuffer for N>1)
+    const mkBuf = (size: number) =>
+      this.device.createBuffer({
+        size,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+    if (this.normWeight) {
+      this.prefillNormUniform = mkBuf(12);
+    }
+    this.prefillQuantUniform = mkBuf(8);
+    this.prefillGemmUniform = mkBuf(16);
   }
 
   /**
@@ -102,6 +119,10 @@ export class BitLinear {
     N: number,
     encoder: GPUCommandEncoder
   ): GPUBuffer {
+    // Step 1+2: RMSNorm + Quantize (fused when sub-norm exists, separate otherwise)
+    let quantized: GPUBuffer;
+    let inputScales: GPUBuffer;
+
     // Step 1: RMSNorm (optional — only when sub-norm weight is provided)
     let normed: GPUBuffer;
     if (this.normWeight) {
@@ -115,11 +136,11 @@ export class BitLinear {
     }
 
     // Step 2: Quantize (absmax int8)
-    const quantized = this.pool.acquire(
-      N * this.inDim * 4, // i32 stored
+    quantized = this.pool.acquire(
+      N * this.inDim * 4,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
-    const inputScales = this.pool.acquire(
+    inputScales = this.pool.acquire(
       N * 4,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.UNIFORM
     );
@@ -161,6 +182,14 @@ export class BitLinear {
     let paramsBuffer: GPUBuffer;
     if (N === 1 && this.decodeNormUniform) {
       paramsBuffer = this.decodeNormUniform;
+    } else if (this.prefillNormUniform) {
+      const paramsData = new ArrayBuffer(12);
+      const paramsView = new DataView(paramsData);
+      paramsView.setUint32(0, N, true);
+      paramsView.setUint32(4, this.inDim, true);
+      paramsView.setFloat32(8, 1e-5, true);
+      this.device.queue.writeBuffer(this.prefillNormUniform, 0, new Uint8Array(paramsData));
+      paramsBuffer = this.prefillNormUniform;
     } else {
       const paramsData = new ArrayBuffer(12);
       const paramsView = new DataView(paramsData);
@@ -202,6 +231,13 @@ export class BitLinear {
     let paramsBuffer: GPUBuffer;
     if (N === 1 && this.decodeQuantUniform) {
       paramsBuffer = this.decodeQuantUniform;
+    } else if (this.prefillQuantUniform) {
+      const paramsData = new ArrayBuffer(8);
+      const paramsView = new DataView(paramsData);
+      paramsView.setUint32(0, N, true);
+      paramsView.setUint32(4, this.inDim, true);
+      this.device.queue.writeBuffer(this.prefillQuantUniform, 0, new Uint8Array(paramsData));
+      paramsBuffer = this.prefillQuantUniform;
     } else {
       const paramsData = new ArrayBuffer(8);
       const paramsView = new DataView(paramsData);
@@ -291,7 +327,14 @@ export class BitLinear {
     paramsView.setUint32(4, N, true);
     paramsView.setUint32(8, this.inDim, true);
     paramsView.setUint32(12, this.kPacked, true);
-    const paramsBuffer = this.createUniformBuffer(paramsData);
+
+    let paramsBuffer: GPUBuffer;
+    if (this.prefillGemmUniform) {
+      this.device.queue.writeBuffer(this.prefillGemmUniform, 0, new Uint8Array(paramsData));
+      paramsBuffer = this.prefillGemmUniform;
+    } else {
+      paramsBuffer = this.createUniformBuffer(paramsData);
+    }
 
     const bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,

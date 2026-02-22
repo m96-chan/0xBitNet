@@ -33,6 +33,10 @@ export class FFN {
   private decodeActivationUniform?: GPUBuffer;
   private decodeElementwiseUniform?: GPUBuffer;
 
+  // Pre-created uniform buffers for N>1 prefill (dynamic — updated via writeBuffer)
+  private prefillActivationUniform?: GPUBuffer;
+  private prefillElementwiseUniform?: GPUBuffer;
+
   // Bind group cache for N=1 decode
   private bgCache: BindGroupCache = createBGCache();
 
@@ -71,6 +75,16 @@ export class FFN {
       v.setUint32(4, 1, true); // multiply
       this.decodeElementwiseUniform = this.createUniform(data);
     }
+
+    // Prefill uniforms (reused via writeBuffer for N>1)
+    const mkBuf = (size: number) =>
+      this.device.createBuffer({
+        size,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+    this.prefillActivationUniform = mkBuf(8);
+    this.prefillElementwiseUniform = mkBuf(8);
+
     this.upProj.initDecodeUniforms();
     this.downProj.initDecodeUniforms();
     this.gateProj?.initDecodeUniforms();
@@ -182,6 +196,13 @@ export class FFN {
     let paramsBuffer: GPUBuffer;
     if (N === 1 && this.decodeActivationUniform) {
       paramsBuffer = this.decodeActivationUniform;
+    } else if (this.prefillActivationUniform) {
+      const paramsData = new ArrayBuffer(8);
+      const v = new DataView(paramsData);
+      v.setUint32(0, numElements, true);
+      v.setUint32(4, activationType, true);
+      this.device.queue.writeBuffer(this.prefillActivationUniform, 0, new Uint8Array(paramsData));
+      paramsBuffer = this.prefillActivationUniform;
     } else {
       const paramsData = new ArrayBuffer(8);
       const v = new DataView(paramsData);
@@ -229,6 +250,13 @@ export class FFN {
     let paramsBuffer: GPUBuffer;
     if (N === 1 && this.decodeElementwiseUniform) {
       paramsBuffer = this.decodeElementwiseUniform;
+    } else if (this.prefillElementwiseUniform) {
+      const paramsData = new ArrayBuffer(8);
+      const v = new DataView(paramsData);
+      v.setUint32(0, numElements, true);
+      v.setUint32(4, op, true);
+      this.device.queue.writeBuffer(this.prefillElementwiseUniform, 0, new Uint8Array(paramsData));
+      paramsBuffer = this.prefillElementwiseUniform;
     } else {
       const paramsData = new ArrayBuffer(8);
       const v = new DataView(paramsData);

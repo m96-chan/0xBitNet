@@ -30,6 +30,10 @@ export class TransformerBlock {
   private decodeNormUniform?: GPUBuffer;
   private decodeAddUniform?: GPUBuffer;
 
+  // Pre-created uniform buffers for N>1 prefill (dynamic — updated via writeBuffer)
+  private prefillNormUniform?: GPUBuffer;
+  private prefillAddUniform?: GPUBuffer;
+
   // Bind group cache for N=1 decode
   private bgCache: BindGroupCache = createBGCache();
 
@@ -70,6 +74,16 @@ export class TransformerBlock {
       v.setUint32(4, 0, true); // add
       this.decodeAddUniform = this.createUniform(data);
     }
+
+    // Prefill uniforms (reused via writeBuffer for N>1)
+    const mkBuf = (size: number) =>
+      this.device.createBuffer({
+        size,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+    this.prefillNormUniform = mkBuf(12);
+    this.prefillAddUniform = mkBuf(8);
+
     this.attention.initDecodeUniforms(maxSeqLen);
     this.ffn.initDecodeUniforms();
   }
@@ -157,6 +171,14 @@ export class TransformerBlock {
     let paramsBuffer: GPUBuffer;
     if (N === 1 && this.decodeNormUniform) {
       paramsBuffer = this.decodeNormUniform;
+    } else if (this.prefillNormUniform) {
+      const paramsData = new ArrayBuffer(12);
+      const v = new DataView(paramsData);
+      v.setUint32(0, N, true);
+      v.setUint32(4, hidden, true);
+      v.setFloat32(8, this.config.rmsNormEps, true);
+      this.device.queue.writeBuffer(this.prefillNormUniform, 0, new Uint8Array(paramsData));
+      paramsBuffer = this.prefillNormUniform;
     } else {
       const paramsData = new ArrayBuffer(12);
       const v = new DataView(paramsData);
@@ -206,6 +228,13 @@ export class TransformerBlock {
     let paramsBuffer: GPUBuffer;
     if (N === 1 && this.decodeAddUniform) {
       paramsBuffer = this.decodeAddUniform;
+    } else if (this.prefillAddUniform) {
+      const paramsData = new ArrayBuffer(8);
+      const v = new DataView(paramsData);
+      v.setUint32(0, numElements, true);
+      v.setUint32(4, 0, true); // add
+      this.device.queue.writeBuffer(this.prefillAddUniform, 0, new Uint8Array(paramsData));
+      paramsBuffer = this.prefillAddUniform;
     } else {
       const paramsData = new ArrayBuffer(8);
       const v = new DataView(paramsData);

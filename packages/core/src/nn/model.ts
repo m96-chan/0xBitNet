@@ -37,6 +37,11 @@ export class BitNetModel {
   private decodeFinalNormUniform?: GPUBuffer;
   private decodeLMHeadUniform?: GPUBuffer;
 
+  // Pre-created uniform buffers for N>1 prefill (dynamic — updated via writeBuffer)
+  private prefillEmbeddingUniform?: GPUBuffer;
+  private prefillFinalNormUniform?: GPUBuffer;
+  private prefillLMHeadUniform?: GPUBuffer;
+
   // Bind group cache for N=1 decode
   private bgCache: BindGroupCache = createBGCache();
 
@@ -256,6 +261,12 @@ export class BitNetModel {
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
 
+    const mkBuf = (size: number) =>
+      this.device.createBuffer({
+        size,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+
     // Embedding uniform (static for N=1)
     {
       const data = new ArrayBuffer(12);
@@ -284,6 +295,13 @@ export class BitNetModel {
       v.setUint32(4, this.config.vocabSize, true);
       v.setUint32(8, this.config.hiddenSize, true);
       this.decodeLMHeadUniform = this.createUniform(data);
+    }
+
+    // Prefill uniforms (reused via writeBuffer for N>1)
+    this.prefillEmbeddingUniform = mkBuf(12);
+    this.prefillFinalNormUniform = mkBuf(12);
+    if (!(this.lmHead instanceof BitLinear)) {
+      this.prefillLMHeadUniform = mkBuf(12);
     }
 
     // Cascade to all layers
@@ -581,6 +599,14 @@ export class BitNetModel {
     let paramsBuffer: GPUBuffer;
     if (N === 1 && this.decodeEmbeddingUniform) {
       paramsBuffer = this.decodeEmbeddingUniform;
+    } else if (this.prefillEmbeddingUniform) {
+      const paramsData = new ArrayBuffer(12);
+      const v = new DataView(paramsData);
+      v.setUint32(0, N, true);
+      v.setUint32(4, this.config.hiddenSize, true);
+      v.setUint32(8, this.config.vocabSize, true);
+      this.device.queue.writeBuffer(this.prefillEmbeddingUniform, 0, new Uint8Array(paramsData));
+      paramsBuffer = this.prefillEmbeddingUniform;
     } else {
       const paramsData = new ArrayBuffer(12);
       const v = new DataView(paramsData);
@@ -628,6 +654,14 @@ export class BitNetModel {
     let paramsBuffer: GPUBuffer;
     if (N === 1 && this.decodeFinalNormUniform) {
       paramsBuffer = this.decodeFinalNormUniform;
+    } else if (this.prefillFinalNormUniform) {
+      const paramsData = new ArrayBuffer(12);
+      const v = new DataView(paramsData);
+      v.setUint32(0, N, true);
+      v.setUint32(4, this.config.hiddenSize, true);
+      v.setFloat32(8, this.config.rmsNormEps, true);
+      this.device.queue.writeBuffer(this.prefillFinalNormUniform, 0, new Uint8Array(paramsData));
+      paramsBuffer = this.prefillFinalNormUniform;
     } else {
       const paramsData = new ArrayBuffer(12);
       const v = new DataView(paramsData);
@@ -678,6 +712,14 @@ export class BitNetModel {
     let paramsBuffer: GPUBuffer;
     if (N === 1 && this.decodeLMHeadUniform) {
       paramsBuffer = this.decodeLMHeadUniform;
+    } else if (this.prefillLMHeadUniform) {
+      const paramsData = new ArrayBuffer(12);
+      const v = new DataView(paramsData);
+      v.setUint32(0, N, true);
+      v.setUint32(4, V, true);
+      v.setUint32(8, D, true);
+      this.device.queue.writeBuffer(this.prefillLMHeadUniform, 0, new Uint8Array(paramsData));
+      paramsBuffer = this.prefillLMHeadUniform;
     } else {
       const paramsData = new ArrayBuffer(12);
       const v = new DataView(paramsData);
