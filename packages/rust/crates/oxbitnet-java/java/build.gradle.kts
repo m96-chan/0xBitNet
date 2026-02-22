@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.github.m96-chan"
-version = "0.4.0"
+version = "0.5.0"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
