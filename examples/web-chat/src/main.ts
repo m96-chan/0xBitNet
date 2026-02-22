@@ -9,18 +9,13 @@ const PRESET_MODELS = [
   },
   {
     name: "Falcon-E 1B",
-    url: "https://huggingface.co/tiiuae/Falcon-E-1B-GGUF/resolve/main/Falcon-E-1B.i2_s.gguf",
-    size: "~400 MB",
+    url: "https://huggingface.co/tiiuae/Falcon-E-1B-Instruct-GGUF/resolve/main/ggml-model-i2_s.gguf",
+    size: "~666 MB",
   },
   {
     name: "Falcon-E 3B",
-    url: "https://huggingface.co/tiiuae/Falcon-E-3B-GGUF/resolve/main/Falcon-E-3B.i2_s.gguf",
-    size: "~700 MB",
-  },
-  {
-    name: "BitNet 0.7B",
-    url: "https://huggingface.co/1bitLLM/bitnet_b1_58-large/resolve/main/ggml-model-i2_s.gguf",
-    size: "~200 MB",
+    url: "https://huggingface.co/tiiuae/Falcon-E-3B-Instruct-GGUF/resolve/main/ggml-model-i2_s.gguf",
+    size: "~1 GB",
   },
 ];
 
