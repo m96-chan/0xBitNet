@@ -140,6 +140,7 @@ impl BitNet {
 
         let eos_id = self.tokenizer.eos_token_id();
         let eot_id = self.tokenizer.eot_token_id();
+        let im_end_id = self.tokenizer.im_end_token_id();
 
         Box::pin(stream! {
             self.model.reset_kv_cache();
@@ -171,7 +172,7 @@ impl BitNet {
                     window,
                 );
 
-                if next_token == eos_id || eot_id == Some(next_token) {
+                if next_token == eos_id || eot_id == Some(next_token) || im_end_id == Some(next_token) {
                     break;
                 }
 

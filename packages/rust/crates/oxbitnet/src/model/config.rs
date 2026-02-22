@@ -12,6 +12,8 @@ pub struct ModelConfig {
     pub rope_theta: f32,
     pub tie_word_embeddings: bool,
     pub activation: Activation,
+    /// True when lm_head.weight is F16 (not I2_S ternary)
+    pub lm_head_f16: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +49,7 @@ pub fn bitnet_2b_4t_config() -> ModelConfig {
         rope_theta: 500000.0,
         tie_word_embeddings: true,
         activation: Activation::Relu2,
+        lm_head_f16: false,
     }
 }
 
@@ -54,15 +57,16 @@ pub fn bitnet_2b_4t_config() -> ModelConfig {
 pub fn bitnet_0_7b_config() -> ModelConfig {
     ModelConfig {
         vocab_size: 32002,
-        hidden_size: 2048,
-        intermediate_size: 5632,
+        hidden_size: 1536,
+        intermediate_size: 4096,
         num_hidden_layers: 24,
-        num_attention_heads: 32,
-        num_key_value_heads: 32,
+        num_attention_heads: 16,
+        num_key_value_heads: 16,
         max_position_embeddings: 2048,
         rms_norm_eps: 1e-6,
         rope_theta: 10000.0,
         tie_word_embeddings: false,
         activation: Activation::Silu,
+        lm_head_f16: false,
     }
 }

@@ -33,6 +33,7 @@ pub struct BitNetModel {
 
 enum LmHead {
     Tied,                    // Use embed_tokens
+    F16(GpuBuf),             // F16 untied head (e.g., Falcon-E)
     Separate(BitLinear),
 }
 
@@ -160,6 +161,9 @@ impl BitNetModel {
 
         let lm_head = if config.tie_word_embeddings || !weights.has("lm_head.weight") {
             LmHead::Tied
+        } else if config.lm_head_f16 {
+            // F16 untied head — use f32_matmul shader (same as tied path)
+            LmHead::F16(require("lm_head.weight")?)
         } else {
             LmHead::Separate(BitLinear::new(
                 Arc::clone(&device),
@@ -240,12 +244,20 @@ impl BitNetModel {
         };
 
         // LM head (always N=1)
-        let logits = match &mut self.lm_head {
-            LmHead::Separate(ref mut bl) => {
-                bl.forward(&lm_input, 1, &mut encoder, &mut self.pipelines, &self.pool)
+        let logits = match &self.lm_head {
+            LmHead::F16(weight) => {
+                let w = weight.clone();
+                self.dispatch_lm_head_with(&mut encoder, &lm_input, 1, w)
             }
             LmHead::Tied => {
                 self.dispatch_lm_head(&mut encoder, &lm_input, 1)
+            }
+            LmHead::Separate(_) => {
+                if let LmHead::Separate(ref mut bl) = self.lm_head {
+                    bl.forward(&lm_input, 1, &mut encoder, &mut self.pipelines, &self.pool)
+                } else {
+                    unreachable!()
+                }
             }
         };
 
@@ -292,7 +304,7 @@ impl BitNetModel {
         for layer in &mut self.layers {
             layer.clear_bg_cache();
         }
-        if let LmHead::Separate(ref mut bl) = self.lm_head {
+        if let LmHead::Separate(ref mut bl) = &mut self.lm_head {
             bl.clear_bg_cache();
         }
     }
@@ -384,6 +396,17 @@ impl BitNetModel {
         input: &wgpu::Buffer,
         n: usize,
     ) -> GpuBuf {
+        let weight = self.embed_tokens.clone();
+        self.dispatch_lm_head_with(encoder, input, n, weight)
+    }
+
+    fn dispatch_lm_head_with(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        input: &wgpu::Buffer,
+        n: usize,
+        weight: GpuBuf,
+    ) -> GpuBuf {
         let v = self.config.vocab_size;
         let d = self.config.hidden_size;
         let entry = self.pipelines.get_or_create_default("f32_matmul", F32_MATMUL_WGSL);
@@ -406,7 +429,7 @@ impl BitNetModel {
             layout: &entry.bind_group_layout,
             entries: &[
                 buf_entry(0, input),
-                buf_entry(1, &self.embed_tokens),
+                buf_entry(1, &weight),
                 buf_entry(2, &output),
                 buf_entry(3, &params),
             ],

@@ -7,6 +7,7 @@ pub struct Tokenizer {
     bos_id: u32,
     eos_id: u32,
     eot_id: Option<u32>,
+    im_end_id: Option<u32>,
 }
 
 /// Chat message for apply_chat_template.
@@ -75,15 +76,16 @@ impl Tokenizer {
             tokenizers::decoders::byte_level::ByteLevel::new(false, true, false),
         ));
 
-        // Find EOT token
-        let eot_id = tokenizer
-            .token_to_id("<|eot_id|>");
+        // Find special stop tokens
+        let eot_id = tokenizer.token_to_id("<|eot_id|>");
+        let im_end_id = tokenizer.token_to_id("<|im_end|>");
 
         Ok(Self {
             inner: tokenizer,
             bos_id,
             eos_id,
             eot_id,
+            im_end_id,
         })
     }
 
@@ -94,6 +96,7 @@ impl Tokenizer {
 
         Ok(Self {
             eot_id: tokenizer.token_to_id("<|eot_id|>"),
+            im_end_id: tokenizer.token_to_id("<|im_end|>"),
             inner: tokenizer,
             bos_id: 1,
             eos_id: 2,
@@ -148,8 +151,21 @@ impl Tokenizer {
         self.eot_id
     }
 
-    /// Apply LLaMA 3 chat template.
+    pub fn im_end_token_id(&self) -> Option<u32> {
+        self.im_end_id
+    }
+
+    /// Apply the appropriate chat template to a list of messages.
+    /// Auto-detects ChatML vs LLaMA 3 format from vocab.
     pub fn apply_chat_template(&self, messages: &[ChatMessage]) -> Result<Vec<u32>> {
+        // Check for ChatML tokens first
+        let im_start = self.inner.token_to_id("<|im_start|>");
+        let im_end = self.inner.token_to_id("<|im_end|>");
+        if let (Some(im_start), Some(im_end)) = (im_start, im_end) {
+            return self.apply_chatml(messages, im_start, im_end);
+        }
+
+        // Check for LLaMA 3 tokens
         let start_header = self.inner.token_to_id("<|start_header_id|>");
         let end_header = self.inner.token_to_id("<|end_header_id|>");
         let eot = self.inner.token_to_id("<|eot_id|>");
@@ -180,6 +196,22 @@ impl Tokenizer {
         tokens.push(end_header);
         tokens.extend(self.encode("\n\n", false)?);
 
+        Ok(tokens)
+    }
+
+    /// Apply the ChatML template (used by Falcon-E and similar models).
+    /// Format: <|im_start|>role\ncontent<|im_end|>\n
+    fn apply_chatml(&self, messages: &[ChatMessage], im_start: u32, im_end: u32) -> Result<Vec<u32>> {
+        let mut tokens = vec![self.bos_id];
+        for msg in messages {
+            tokens.push(im_start);
+            tokens.extend(self.encode(&format!("{}\n{}", msg.role, msg.content), false)?);
+            tokens.push(im_end);
+            tokens.extend(self.encode("\n", false)?);
+        }
+        // Trailing assistant prompt
+        tokens.push(im_start);
+        tokens.extend(self.encode("assistant\n", false)?);
         Ok(tokens)
     }
 }

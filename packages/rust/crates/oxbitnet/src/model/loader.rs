@@ -139,6 +139,11 @@ fn load_gguf(
             if hf_name == "model.embed_tokens.weight" {
                 // Keep embedding as F16 on GPU
                 store.upload_sharded(&hf_name, tensor_data, max_binding);
+            } else if hf_name == "lm_head.weight" {
+                // F16 untied LM head (e.g., Falcon-E): keep as raw F16 like embeddings,
+                // reuse the f32_matmul shader path that decodes F16 via unpack2x16float.
+                store.upload_sharded(&hf_name, tensor_data, max_binding);
+                config.lm_head_f16 = true;
             } else {
                 // Convert F16 to F32
                 let f32_data = convert_f16_to_f32(tensor_data, num_elements as usize);
@@ -256,7 +261,8 @@ fn config_from_gguf_metadata(metadata: &GgufMetadata) -> ModelConfig {
         .and_then(|v| v.as_u32())
         .unwrap_or(6912) as usize;
 
-    let is_official = vocab_size > 100000 || arch.contains("bitnet");
+    // Only BitNet 2B-4T (arch="bitnet-25") and derivatives use relu²
+    let is_bitnet_25 = arch == "bitnet-25";
 
     ModelConfig {
         vocab_size,
@@ -273,13 +279,14 @@ fn config_from_gguf_metadata(metadata: &GgufMetadata) -> ModelConfig {
             .unwrap_or(1e-5),
         rope_theta: get("rope.freq_base")
             .and_then(|v| v.as_f32())
-            .unwrap_or(if is_official { 500000.0 } else { 10000.0 }),
+            .unwrap_or(if is_bitnet_25 { 500000.0 } else { 10000.0 }),
         tie_word_embeddings: false,
-        activation: if is_official {
+        activation: if is_bitnet_25 {
             Activation::Relu2
         } else {
             Activation::Silu
         },
+        lm_head_f16: false,
     }
 }
 
@@ -329,12 +336,15 @@ fn create_dummy_scales(store: &mut WeightStore, config: &ModelConfig) {
         }
     }
 
-    let lm_head_scale = "lm_head.weight_scale".to_string();
-    if !store.has(&lm_head_scale) {
-        let data: Vec<u8> = std::iter::repeat_n(1.0f32.to_le_bytes(), config.vocab_size)
-            .flatten()
-            .collect();
-        store.upload(&lm_head_scale, &data);
+    // F16 lm_head doesn't need a ternary weight scale
+    if !config.lm_head_f16 {
+        let lm_head_scale = "lm_head.weight_scale".to_string();
+        if !store.has(&lm_head_scale) {
+            let data: Vec<u8> = std::iter::repeat_n(1.0f32.to_le_bytes(), config.vocab_size)
+                .flatten()
+                .collect();
+            store.upload(&lm_head_scale, &data);
+        }
     }
 }
 
