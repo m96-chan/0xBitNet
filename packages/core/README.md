@@ -5,10 +5,12 @@
 <h1 align="center">0xBitNet</h1>
 
 <p align="center">
+  <a href="https://github.com/m96-chan/0xBitNet/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/m96-chan/0xBitNet/ci.yml?branch=main&label=CI" alt="CI"></a>
+  <a href="https://github.com/m96-chan/0xBitNet/actions/workflows/rust-ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/m96-chan/0xBitNet/rust-ci.yml?branch=main&label=Rust%20CI" alt="Rust CI"></a>
   <a href="https://www.npmjs.com/package/0xbitnet"><img src="https://img.shields.io/npm/v/0xbitnet" alt="npm"></a>
   <a href="https://crates.io/crates/oxbitnet"><img src="https://img.shields.io/crates/v/oxbitnet" alt="crates.io"></a>
   <a href="https://pypi.org/project/oxbitnet/"><img src="https://img.shields.io/pypi/v/oxbitnet" alt="PyPI"></a>
-  <a href="https://github.com/m96-chan/0xBitNet/actions"><img src="https://img.shields.io/github/actions/workflow/status/m96-chan/0xBitNet/ci.yml?branch=main" alt="CI"></a>
+  <a href="https://central.sonatype.com/artifact/io.github.m96-chan/OxBitNet"><img src="https://img.shields.io/maven-central/v/io.github.m96-chan/OxBitNet" alt="Maven Central"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/m96-chan/0xBitNet" alt="License"></a>
 </p>
 
@@ -169,8 +171,10 @@ for await (const token of model.generate(messages, { maxTokens: 128, temperature
 | Model | GGUF | Parameters | VRAM |
 |-------|------|------------|------|
 | [BitNet b1.58 2B-4T](https://huggingface.co/microsoft/BitNet-b1.58-2B-4T) | [ggml-model-i2_s.gguf](https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf) | 2B | ~1.5 GB |
+| [Falcon-E 1B Instruct](https://huggingface.co/tiiuae/Falcon-E-1B-Instruct-GGUF) | [ggml-model-i2_s.gguf](https://huggingface.co/tiiuae/Falcon-E-1B-Instruct-GGUF) | 1B | ~666 MB |
+| [Falcon-E 3B Instruct](https://huggingface.co/tiiuae/Falcon-E-3B-Instruct-GGUF) | [ggml-model-i2_s.gguf](https://huggingface.co/tiiuae/Falcon-E-3B-Instruct-GGUF) | 3B | ~1 GB |
 
-More models are planned — see [#1](https://github.com/m96-chan/0xBitNet/issues/1) and [Model Compatibility](docs/model-compatibility.md) for GGUF requirements.
+Any I2_S GGUF model with a compatible architecture should work — see [Model Compatibility](docs/model-compatibility.md) for details.
 
 ## Install
 
