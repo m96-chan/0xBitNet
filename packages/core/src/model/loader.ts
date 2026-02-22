@@ -318,12 +318,13 @@ function configFromGGUFMetadata(
     (metadata["general.architecture"] as string) ?? "bitnet";
 
   // Try architecture-prefixed keys, then common fallbacks
-  // The BitNet 2B-4T GGUF uses arch "bitnet-25"
+  const isBitNet = arch.startsWith("bitnet");
   function get(suffix: string): unknown {
     return metadata[`${arch}.${suffix}`]
       ?? metadata[`llama.${suffix}`]
       ?? metadata[`bitnet.${suffix}`]
-      ?? metadata[`bitnet-25.${suffix}`];
+      ?? metadata[`bitnet-25.${suffix}`]
+      ?? metadata[`bitnet-b1.58.${suffix}`];
   }
 
   const hiddenSize = (get("embedding_length") as number) ?? 2560;
@@ -337,9 +338,9 @@ function configFromGGUFMetadata(
     128256;
   const intermediateSize = (get("feed_forward_length") as number) ?? 6912;
 
-  // Only BitNet 2B-4T (arch="bitnet-25") and derivatives use relu²
-  const activation = arch === "bitnet-25" ? "relu2" : "silu";
-  const ropeTheta = (get("rope.freq_base") as number) ?? (arch === "bitnet-25" ? 500000.0 : 10000.0);
+  // All BitNet variants (arch="bitnet-b1.58", "bitnet-25", etc.) use relu²
+  const activation = isBitNet ? "relu2" : "silu";
+  const ropeTheta = (get("rope.freq_base") as number) ?? (isBitNet ? 500000.0 : 10000.0);
 
   return {
     modelType: "bitnet",
