@@ -184,7 +184,7 @@ Any I2_S GGUF model with a compatible architecture should work — see [Model Co
 | Rust | [`oxbitnet`](https://crates.io/crates/oxbitnet) | `cargo add oxbitnet` |
 | Python | [`oxbitnet`](https://pypi.org/project/oxbitnet/) | `pip install oxbitnet` |
 | Swift / iOS | `OxBitNet` | Swift Package Manager (see [oxbitnet-swift](packages/rust/crates/oxbitnet-swift/)) |
-| Java / Android | `oxbitnet-java` | `cargo build -p oxbitnet-java --release` |
+| Java / Android | [`oxbitnet`](https://central.sonatype.com/artifact/io.github.m96-chan/oxbitnet) | `implementation("io.github.m96-chan:oxbitnet:0.5.2")` |
 | C / FFI | `oxbitnet-ffi` | `cargo build -p oxbitnet-ffi --release` |
 
 ## API Overview
