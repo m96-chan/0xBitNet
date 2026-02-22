@@ -7,6 +7,13 @@ on:
     branches: [main]
 
 jobs:
+  shader-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shader sync
+        run: diff <(find packages/core/src/shaders -name '*.wgsl' -exec basename {} \; | sort) <(find packages/rust/crates/oxbitnet/src/shaders -name '*.wgsl' -exec basename {} \; | sort) && for f in packages/core/src/shaders/*.wgsl; do diff "$f" "packages/rust/crates/oxbitnet/src/shaders/$(basename "$f")"; done
+
   build:
     runs-on: ubuntu-latest
     strategy:

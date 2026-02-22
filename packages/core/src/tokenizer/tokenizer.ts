@@ -335,6 +335,7 @@ export class Tokenizer {
 
   // GPT-2 byte-to-unicode mapping
   private static byteToUnicode: Map<number, string> | null = null;
+  private static unicodeToByte: Map<string, number> | null = null;
 
   private static getByteToUnicode(): Map<number, string> {
     if (Tokenizer.byteToUnicode) return Tokenizer.byteToUnicode;
@@ -369,6 +370,18 @@ export class Tokenizer {
     return map;
   }
 
+  private static getUnicodeToByte(): Map<string, number> {
+    if (Tokenizer.unicodeToByte) return Tokenizer.unicodeToByte;
+
+    const b2u = Tokenizer.getByteToUnicode();
+    const map = new Map<string, number>();
+    for (const [k, v] of b2u) {
+      map.set(v, k);
+    }
+    Tokenizer.unicodeToByte = map;
+    return map;
+  }
+
   private stringToBytes(text: string): string[] {
     const b2u = Tokenizer.getByteToUnicode();
     const bytes = this.textEncoder.encode(text);
@@ -380,11 +393,7 @@ export class Tokenizer {
   }
 
   private bytesToString(token: string): string {
-    const b2u = Tokenizer.getByteToUnicode();
-    const u2b = new Map<string, number>();
-    for (const [k, v] of b2u) {
-      u2b.set(v, k);
-    }
+    const u2b = Tokenizer.getUnicodeToByte();
 
     const bytes: number[] = [];
     for (const ch of token) {
