@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <RootNamespace>OxBitNet</RootNamespace>
+    <AssemblyName>OxBitNet</AssemblyName>
+
+    <!-- NuGet package metadata -->
+    <PackageId>OxBitNet</PackageId>
+    <Version>0.5.2</Version>
+    <Authors>m96-chan</Authors>
+    <Description>C# bindings for oxbitnet — run BitNet b1.58 ternary LLMs with GPU acceleration (wgpu).</Description>
+    <PackageProjectUrl>https://github.com/m96-chan/0xBitNet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/m96-chan/0xBitNet</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>bitnet;llm;inference;wgpu;ai</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!-- Include native runtimes in NuGet package -->
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <!-- Native runtime assets (populated by CI) -->
+  <ItemGroup>
+    <None Include="../../runtimes/**/*" Pack="true" PackagePath="runtimes/" />
+  </ItemGroup>
+
+</Project>
