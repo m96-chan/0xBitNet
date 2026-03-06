@@ -37,6 +37,8 @@ jobs:
             "$(grep -m1 '^version' packages/rust/crates/oxbitnet-python/pyproject.toml | sed 's/.*"\(.*\)"/\1/')"
           check packages/rust/crates/oxbitnet-java/java/build.gradle.kts \
             "$(grep -m1 '^version' packages/rust/crates/oxbitnet-java/java/build.gradle.kts | sed 's/.*"\(.*\)"/\1/')"
+          check packages/rust/crates/oxbitnet-haskell/oxbitnet.cabal \
+            "$(grep -m1 '^version:' packages/rust/crates/oxbitnet-haskell/oxbitnet.cabal | sed 's/.*: *//')"
           exit $ERRORS
 
   # ── crates.io ──
@@ -307,3 +309,48 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.GPG_KEY_ID }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_PRIVATE_KEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.GPG_PASSPHRASE }}
+
+  # ── Hackage (Haskell) ──
+  publish-hackage:
+    needs: version-check
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.6"
+          cabal-version: "3.10"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/rust
+
+      - name: Build native library (needed for hsc2hs)
+        working-directory: packages/rust
+        run: cargo build -p oxbitnet-ffi --release
+
+      - name: Build Haskell package
+        working-directory: packages/rust/crates/oxbitnet-haskell
+        run: |
+          cabal build all \
+            --extra-lib-dirs=../../target/release \
+            --extra-include-dirs=../oxbitnet-ffi
+
+      - name: Create source distribution
+        working-directory: packages/rust/crates/oxbitnet-haskell
+        run: cabal sdist
+
+      - name: Upload to Hackage
+        working-directory: packages/rust/crates/oxbitnet-haskell
+        run: |
+          cabal upload --publish \
+            dist-newstyle/sdist/oxbitnet-*.tar.gz \
+            --username "$HACKAGE_USERNAME" \
+            --password "$HACKAGE_PASSWORD"
+        env:
+          HACKAGE_USERNAME: ${{ secrets.HACKAGE_USERNAME }}
+          HACKAGE_PASSWORD: ${{ secrets.HACKAGE_PASSWORD }}
