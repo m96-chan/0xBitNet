@@ -37,6 +37,8 @@ jobs:
             "$(grep -m1 '^version' packages/rust/crates/oxbitnet-python/pyproject.toml | sed 's/.*"\(.*\)"/\1/')"
           check packages/rust/crates/oxbitnet-java/java/build.gradle.kts \
             "$(grep -m1 '^version' packages/rust/crates/oxbitnet-java/java/build.gradle.kts | sed 's/.*"\(.*\)"/\1/')"
+          check packages/rust/crates/oxbitnet-csharp/src/OxBitNet/OxBitNet.csproj \
+            "$(grep '<Version>' packages/rust/crates/oxbitnet-csharp/src/OxBitNet/OxBitNet.csproj | sed 's/.*<Version>\(.*\)<\/Version>/\1/' | tr -d ' ')"
           check packages/rust/crates/oxbitnet-haskell/oxbitnet.cabal \
             "$(grep -m1 '^version:' packages/rust/crates/oxbitnet-haskell/oxbitnet.cabal | sed 's/.*: *//')"
           exit $ERRORS
@@ -309,6 +311,85 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.GPG_KEY_ID }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_PRIVATE_KEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.GPG_PASSPHRASE }}
+
+  # ── NuGet (.NET / C#) ──
+  build-nuget-natives:
+    needs: version-check
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            rid: linux-x64
+            lib: liboxbitnet_ffi.so
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            rid: osx-arm64
+            lib: liboxbitnet_ffi.dylib
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            rid: osx-x64
+            lib: liboxbitnet_ffi.dylib
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            rid: win-x64
+            lib: oxbitnet_ffi.dll
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/rust
+
+      - name: Build native library
+        working-directory: packages/rust
+        run: cargo build -p oxbitnet-ffi --release --target ${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuget-native-${{ matrix.rid }}
+          path: packages/rust/target/${{ matrix.target }}/release/${{ matrix.lib }}
+
+  publish-nuget:
+    needs: build-nuget-natives
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Download native libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: nuget-native-*
+          path: native-tmp
+
+      - name: Bundle natives into runtimes
+        run: |
+          CSHARP_DIR=packages/rust/crates/oxbitnet-csharp
+          for dir in native-tmp/nuget-native-*; do
+            RID=$(basename "$dir" | sed 's/nuget-native-//')
+            DEST="$CSHARP_DIR/runtimes/$RID/native"
+            mkdir -p "$DEST"
+            cp "$dir"/* "$DEST/"
+          done
+
+      - name: Pack and publish
+        working-directory: packages/rust/crates/oxbitnet-csharp/src/OxBitNet
+        run: |
+          dotnet pack -c Release -o ../../nupkg
+          dotnet nuget push ../../nupkg/*.nupkg \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
 
   # ── Hackage (Haskell) ──
   publish-hackage:
