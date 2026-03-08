@@ -1,0 +1,42 @@
+cabal-version:      2.4
+name:               oxbitnet
+version:            0.5.2
+synopsis:           Haskell bindings for oxbitnet — BitNet b1.58 inference with wgpu
+description:
+  Run BitNet b1.58 ternary LLMs with GPU acceleration (wgpu).
+  .
+  This package provides Haskell bindings to the @liboxbitnet_ffi@ C library.
+  You must build @liboxbitnet_ffi@ separately and ensure the linker can find it.
+  .
+  See <https://github.com/m96-chan/0xBitNet> for the full project.
+
+homepage:           https://github.com/m96-chan/0xBitNet
+bug-reports:        https://github.com/m96-chan/0xBitNet/issues
+license:            MIT
+license-file:       LICENSE
+author:             Yusuke Harada
+maintainer:         m96.chan.mfmf@gmail.com
+category:           AI, FFI
+extra-source-files: README.md
+
+library
+  exposed-modules:
+    OxBitNet
+    Foreign.OxBitNet.Raw
+  build-depends:
+    base >= 4.14 && < 5
+  hs-source-dirs: src
+  default-language: Haskell2010
+  extra-libraries: oxbitnet_ffi
+  include-dirs: ../../oxbitnet-ffi
+  includes: oxbitnet.h
+  ghc-options: -Wall
+
+executable oxbitnet-chat
+  main-is: Chat.hs
+  build-depends:
+    base >= 4.14 && < 5,
+    oxbitnet
+  hs-source-dirs: examples
+  default-language: Haskell2010
+  ghc-options: -Wall -threaded
