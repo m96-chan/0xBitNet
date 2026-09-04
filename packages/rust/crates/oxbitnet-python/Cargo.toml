@@ -10,6 +10,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 oxbitnet = { path = "../oxbitnet" }
-pyo3 = { version = "0.28", features = ["extension-module"] }
+pyo3 = { version = "0.29", features = ["extension-module"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 futures = "0.3"
