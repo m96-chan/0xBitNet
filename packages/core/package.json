@@ -45,10 +45,10 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "@webgpu/types": "^0.1.52",
+    "@webgpu/types": "^0.1.72",
     "tsup": "^8.3.0",
     "typescript": "^5.7.0",
-    "vitest": "^4.0.18",
+    "vitest": "^4.1.11",
     "playwright": "^1.49.0"
   }
 }
