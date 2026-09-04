@@ -19,7 +19,7 @@ tracing = "0.1"
 dirs = "6"
 half = { version = "2", features = ["bytemuck"] }
 sha2 = "0.10"
-tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
+tokenizers = { version = "0.23", default-features = false, features = ["onig"] }
 async-stream = "0.3"
 rand = "0.9"
 ahash = "0.8"
