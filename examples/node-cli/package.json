@@ -10,11 +10,11 @@
   },
   "dependencies": {
     "0xbitnet": "*",
-    "webgpu": "^0.3.8"
+    "webgpu": "^0.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "tsx": "^4.19.0",
+    "tsx": "^4.23.13",
     "typescript": "^5.7.0"
   }
 }
