@@ -93,7 +93,7 @@ jobs:
           args: --release --out dist
           working-directory: packages/rust/crates/oxbitnet-python
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheel-${{ matrix.os }}-${{ matrix.target }}
           path: packages/rust/crates/oxbitnet-python/dist/*.whl
@@ -197,7 +197,7 @@ jobs:
           zip -r OxBitNet.xcframework.zip OxBitNet.xcframework
           shasum -a 256 OxBitNet.xcframework.zip > OxBitNet.xcframework.zip.sha256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: xcframework
           path: |
@@ -268,7 +268,7 @@ jobs:
         working-directory: packages/rust
         run: cargo build -p oxbitnet-java --release --target ${{ matrix.target }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: java-native-${{ matrix.classifier }}
           path: packages/rust/target/${{ matrix.target }}/release/${{ matrix.lib }}
@@ -351,7 +351,7 @@ jobs:
         working-directory: packages/rust
         run: cargo build -p oxbitnet-ffi --release --target ${{ matrix.target }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: nuget-native-${{ matrix.rid }}
           path: packages/rust/target/${{ matrix.target }}/release/${{ matrix.lib }}
