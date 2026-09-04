@@ -1,0 +1,31 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule: { interval: "weekly" }
+    open-pull-requests-limit: 5
+    groups:
+      npm:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: "cargo"
+    directory: "/packages/rust"
+    schedule: { interval: "weekly" }
+    open-pull-requests-limit: 5
+    groups:
+      cargo:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: "gradle"
+    directory: "/packages/rust/crates/oxbitnet-java/java"
+    schedule: { interval: "weekly" }
+    open-pull-requests-limit: 3
+  - package-ecosystem: "swift"
+    directory: "/"
+    schedule: { interval: "weekly" }
+    open-pull-requests-limit: 3
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: { interval: "weekly" }
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        update-types: ["minor", "patch"]
