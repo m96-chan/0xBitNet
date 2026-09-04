@@ -1,6 +1,6 @@
 plugins {
     java
-    id("com.vanniktech.maven.publish") version "0.30.0"
+    id("com.vanniktech.maven.publish") version "0.37.0"
 }
 
 group = "io.github.m96-chan"
